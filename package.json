@@ -1,4 +1,17 @@
 {
+  "name": "community-resilience-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter community-resilience-frontend dev",
+    "build": "pnpm --filter community-resilience-frontend build",
+    "preview": "pnpm --filter community-resilience-frontend preview",
+    "check": "pnpm --filter community-resilience-frontend check",
+    "check:watch": "pnpm --filter community-resilience-frontend check:watch",
+    "frontend:dev": "pnpm --filter community-resilience-frontend dev",
+    "frontend:build": "pnpm --filter community-resilience-frontend build",
+    "frontend:preview": "pnpm --filter community-resilience-frontend preview"
+  },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.0"
   }
