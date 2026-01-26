@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # Python
 __pycache__/
@@ -64,3 +65,4 @@ models/
 # OS
 .DS_Store
 Thumbs.db
+.env.*
