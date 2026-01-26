@@ -1,0 +1,29 @@
+# Render Blueprint for Community Resilience API
+# Deploy with: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: community-resilience-api
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # Database - connect to Neon PostgreSQL
+      - key: DATABASE_URL
+        sync: false  # Set manually in Render dashboard
+      # LLM Configuration
+      - key: LLM_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: GROQ_MODEL
+        value: llama-3.1-8b-instant
+      # Embedding Configuration
+      - key: EMBEDDING_MODEL
+        value: all-MiniLM-L6-v2
+      - key: EMBEDDING_DIMENSION
+        value: "384"

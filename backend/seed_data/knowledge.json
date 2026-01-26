@@ -1,0 +1,162 @@
+[
+  {
+    "title": "Riverside Street Flooding Pattern",
+    "description": "Riverside Street floods after heavy rain above 100mm. The low-lying section between Oak Avenue and Pine Street becomes impassable within 2 hours of sustained rainfall. Elderly residents in the apartment complex at 45 Riverside often become isolated and require evacuation assistance.",
+    "tags": ["flood", "elderly", "evacuation", "road-closure"],
+    "location": "Riverside Street",
+    "hazard_type": "flood",
+    "source": "Community workshop 2023"
+  },
+  {
+    "title": "Hilltop Community Hall - Emergency Shelter",
+    "description": "Hilltop Community Hall on Hilltop Road serves as the primary emergency shelter. Capacity of 120 people. Has backup generator, accessible toilets, and basic medical supplies. Kitchen facilities available. Keys held by Martha Chen (0412-XXX-XXX) and the council.",
+    "tags": ["shelter", "generator", "accessible", "medical"],
+    "location": "Hilltop Road",
+    "hazard_type": "flood",
+    "source": "Emergency planning committee"
+  },
+  {
+    "title": "Miller Bridge Closure History",
+    "description": "Miller Bridge over Willow Creek closes when water reaches the 2.5m marker on the upstream pylon. During the 2019 flood, the bridge was closed for 3 days. Alternative route via Highway 7 adds 25 minutes to travel time. School buses cannot use the alternative route.",
+    "tags": ["bridge", "road-closure", "transport", "school"],
+    "location": "Miller Bridge, Willow Creek",
+    "hazard_type": "flood",
+    "source": "Council records"
+  },
+  {
+    "title": "Sunrise Aged Care - Vulnerable Population",
+    "description": "Sunrise Aged Care facility houses 45 residents, 12 of whom require oxygen equipment. Located in flood-prone zone. Evacuation requires 4 hours minimum and 3 accessible vehicles. Contact: Director James Okonkwo (0423-XXX-XXX). Has mutual aid agreement with Hilltop Community Hall.",
+    "tags": ["aged-care", "medical", "evacuation", "oxygen"],
+    "location": "23 Sunrise Avenue",
+    "hazard_type": "flood",
+    "source": "Emergency services liaison"
+  },
+  {
+    "title": "Local SES Contact and Capabilities",
+    "description": "Local SES unit based at 15 Industrial Drive. Has 2 flood boats, sandbag supplies, and 12 active volunteers. Response time averages 45 minutes. Contact: Unit Commander Sarah Kim (0434-XXX-XXX). Busiest during flood events - prioritize requests.",
+    "tags": ["SES", "emergency-services", "boats", "sandbags"],
+    "location": "15 Industrial Drive",
+    "hazard_type": "flood",
+    "source": "SES briefing"
+  },
+  {
+    "title": "Willow Creek Early Warning Signs",
+    "description": "When Willow Creek reaches 1.8m at the town gauge, flooding of low-lying areas is imminent (typically 4-6 hours). Local knowledge: watch for debris buildup at the old railway bridge - when debris appears, water is rising fast upstream.",
+    "tags": ["early-warning", "creek", "monitoring"],
+    "location": "Willow Creek",
+    "hazard_type": "flood",
+    "source": "Elder interview - Tom Nguyen"
+  },
+  {
+    "title": "Power Outage Pattern",
+    "description": "Substation on Creek Road floods at 2.2m creek level, causing power outages to Riverside, Oak, and Pine Street areas. Typical restoration time is 8-12 hours after floodwaters recede. Residents with medical equipment should evacuate early.",
+    "tags": ["power", "electricity", "medical", "infrastructure"],
+    "location": "Creek Road Substation",
+    "hazard_type": "flood",
+    "source": "Power company liaison"
+  },
+  {
+    "title": "St. Mary's Church - Secondary Shelter",
+    "description": "St. Mary's Church on Church Street can serve as overflow shelter for 60 people. No generator but has gas cooking. Accessible entry via side ramp. Contact: Pastor David (0445-XXX-XXX). Often used for families with young children.",
+    "tags": ["shelter", "church", "families", "children"],
+    "location": "Church Street",
+    "hazard_type": "flood",
+    "source": "Community workshop 2023"
+  },
+  {
+    "title": "Medication Access During Emergencies",
+    "description": "Riverside Pharmacy at 12 Main Street stays open during emergencies when safe. Pharmacist Jenny maintains list of residents with critical medications. Has emergency medication dispensing agreement with hospital. Contact: 0456-XXX-XXX.",
+    "tags": ["pharmacy", "medication", "medical", "health"],
+    "location": "12 Main Street",
+    "hazard_type": "flood",
+    "source": "Health services network"
+  },
+  {
+    "title": "Pet-Friendly Evacuation",
+    "description": "Agricultural showgrounds on Farm Road accepts evacuees with pets. Open paddock space for large animals. Small animal crates available. Managed by agricultural society volunteers. Coordinate with SES for pet transport if needed.",
+    "tags": ["pets", "animals", "evacuation", "livestock"],
+    "location": "Farm Road Showgrounds",
+    "hazard_type": "flood",
+    "source": "Agricultural society"
+  },
+  {
+    "title": "Communication Backup - Radio Network",
+    "description": "When mobile networks fail, tune to local FM 98.5 for emergency broadcasts. Amateur radio operators active on 146.5 MHz. Radio base station at SES headquarters. Community Facebook group 'Rivertown Emergency Updates' moderated by council.",
+    "tags": ["communication", "radio", "emergency-broadcast"],
+    "location": "Town-wide",
+    "hazard_type": "flood",
+    "source": "Communications plan"
+  },
+  {
+    "title": "School Evacuation Protocol",
+    "description": "Rivertown Primary and High School have coordinated evacuation protocols. Buses pre-positioned during flood warnings. Children can be collected from Hilltop Community Hall if schools close early. Parents notified via SMS and school app.",
+    "tags": ["school", "children", "evacuation", "transport"],
+    "location": "School precinct",
+    "hazard_type": "flood",
+    "source": "School emergency plan"
+  },
+  {
+    "title": "Sandbagging Locations",
+    "description": "Sandbags available at: SES HQ (15 Industrial Drive), Council depot (8 Works Road), and Fire station. Self-fill sand at council depot. Pre-filled bags limited - priority for elderly and disabled residents. Request early during flood warnings.",
+    "tags": ["sandbags", "flood-protection", "supplies"],
+    "location": "Multiple locations",
+    "hazard_type": "flood",
+    "source": "Council emergency plan"
+  },
+  {
+    "title": "Historic Flood Levels",
+    "description": "Major floods: 1974 (3.2m), 1998 (2.8m), 2019 (2.6m). At 2.4m: Riverside Street floods. At 2.6m: Miller Bridge closes, power outages begin. At 2.8m: Main Street shops affected. At 3.0m: Hospital goes to emergency power only.",
+    "tags": ["history", "flood-levels", "reference"],
+    "location": "Town gauge at Willow Creek",
+    "hazard_type": "flood",
+    "source": "Historical records"
+  },
+  {
+    "title": "Disability Support Network",
+    "description": "Local disability support coordinator: Maria Santos (0467-XXX-XXX). Maintains register of residents needing evacuation assistance. Coordinates with SES for accessible transport. Priority notification list for power outages affecting medical equipment.",
+    "tags": ["disability", "accessibility", "evacuation", "medical"],
+    "location": "Town-wide",
+    "hazard_type": "flood",
+    "source": "Disability services"
+  },
+  {
+    "title": "Food and Water Distribution",
+    "description": "During extended emergencies, food distribution coordinated from Hilltop Community Hall. Red Cross volunteers activate after 24 hours. Bottled water supplies at council depot. Lions Club operates BBQ for hot meals. Dietary requirements should be communicated to shelter managers.",
+    "tags": ["food", "water", "supplies", "volunteers"],
+    "location": "Hilltop Community Hall",
+    "hazard_type": "flood",
+    "source": "Emergency planning committee"
+  },
+  {
+    "title": "Road Closure Sequence",
+    "description": "Typical road closure order during rising floods: 1) Riverside Street, 2) Creek Road, 3) Miller Bridge, 4) Low sections of Oak Avenue. Council updates road closure signs but local knowledge is faster - check Facebook group for real-time updates.",
+    "tags": ["roads", "closures", "transport", "sequence"],
+    "location": "Multiple roads",
+    "hazard_type": "flood",
+    "source": "Council roads department"
+  },
+  {
+    "title": "Post-Flood Cleanup Coordination",
+    "description": "After floods recede, cleanup coordinated from council depot. Green waste collection prioritized. Council provides free skip bins for flood-damaged materials. Volunteers register through SES. Mud army typically mobilizes within 48 hours.",
+    "tags": ["cleanup", "recovery", "waste", "volunteers"],
+    "location": "Council depot, 8 Works Road",
+    "hazard_type": "flood",
+    "source": "Recovery plan"
+  },
+  {
+    "title": "Insurance and Financial Assistance",
+    "description": "Financial counselor available through community center post-disaster. Emergency relief payments through Centrelink - claim online or at recovery center. Council coordinates with insurance assessors. Document damage with photos before cleanup.",
+    "tags": ["insurance", "financial", "recovery", "assistance"],
+    "location": "Community center",
+    "hazard_type": "flood",
+    "source": "Recovery services"
+  },
+  {
+    "title": "Mental Health Support",
+    "description": "Post-flood counseling available through community health center. Peer support group 'Flood Recovery Circle' meets Thursdays at St. Mary's. Children's trauma support through school counselors. 24/7 crisis line: 13 11 14.",
+    "tags": ["mental-health", "counseling", "support", "recovery"],
+    "location": "Community health center",
+    "hazard_type": "flood",
+    "source": "Health services"
+  }
+]

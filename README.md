@@ -1,0 +1,190 @@
+# Community Resilience Reasoning Model MVP
+
+An AI-powered system to help community coordinators prioritize disaster response actions using local community knowledge.
+
+## Features
+
+- **Knowledge Base**: Store community-specific disaster knowledge (flood patterns, vulnerable populations, resources)
+- **Semantic Search**: Find relevant knowledge using vector similarity (pgvector)
+- **AI Reasoning**: Generate prioritized action recommendations using LLM
+- **Feedback Loop**: Collect user feedback to improve the system over time
+
+## Quick Start
+
+### Prerequisites
+
+- Docker and Docker Compose
+- (Optional) Ollama installed locally for LLM inference
+
+### 1. Clone and Setup
+
+```bash
+cd community-resilience-mvp
+cp .env.example .env
+```
+
+### 2. Start Services
+
+```bash
+docker-compose up -d
+```
+
+This starts:
+
+- PostgreSQL with pgvector extension (port 5432)
+- Ollama for local LLM inference (port 11434)
+- FastAPI backend (port 8000)
+- SvelteKit frontend (port 5173)
+
+### 3. Pull LLM Model (if using Ollama)
+
+```bash
+docker exec community_resilience_ollama ollama pull llama3.2
+```
+
+### 4. Run Database Migrations
+
+```bash
+docker exec community_resilience_backend alembic upgrade head
+```
+
+### 5. Load Seed Data
+
+```bash
+docker exec community_resilience_backend python scripts/load_seed_data.py
+```
+
+### 6. Access the Application
+
+- **Frontend**: <http://localhost:5173>
+- **API Docs**: <http://localhost:8000/docs>
+- **Health Check**: <http://localhost:8000/health>
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| POST | `/query` | Submit situation, get prioritized recommendations |
+| POST | `/ingest` | Add new knowledge entry |
+| GET | `/knowledge` | List all knowledge entries |
+| GET | `/knowledge/{id}` | Get specific knowledge entry |
+| PUT | `/knowledge/{id}` | Update knowledge entry |
+| DELETE | `/knowledge/{id}` | Delete knowledge entry |
+| POST | `/feedback` | Submit feedback on recommendations |
+| POST | `/events` | Ingest real-time events |
+| GET | `/events` | List recent events |
+| POST | `/assets` | Add community assets |
+| GET | `/assets` | List community assets |
+| GET | `/health` | Health check |
+
+## Example Query
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Heavy rain, Riverside Street flooding, power out in the area"}'
+```
+
+Response:
+
+```json
+{
+  "summary": "Heavy rainfall has caused flooding on Riverside Street with power outages affecting the area...",
+  "actions": [
+    {
+      "priority": 1,
+      "action": "Evacuate elderly residents from 45 Riverside Street to Hilltop Community Hall",
+      "rationale": "Elderly residents often become isolated during floods and the hall has backup generator"
+    },
+    {
+      "priority": 2,
+      "action": "Contact SES for flood boat deployment",
+      "rationale": "SES has 2 flood boats available for water rescues"
+    }
+  ],
+  "retrieved_knowledge_ids": [1, 2, 7],
+  "log_id": 1
+}
+```
+
+## Development
+
+### Local Backend Development
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+pip install -r requirements.txt
+
+# Start PostgreSQL separately or use docker-compose up db
+uvicorn app:app --reload
+```
+
+### Environment Variables
+
+See `.env.example` for all configuration options:
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/community_resilience` |
+| `LLM_PROVIDER` | LLM backend (`ollama` or `openai`) | `ollama` |
+| `LLM_MODEL` | Ollama model name | `llama3.2` |
+| `OPENAI_API_KEY` | OpenAI API key (if using OpenAI) | - |
+| `EMBEDDING_MODEL` | Sentence transformer model | `all-MiniLM-L6-v2` |
+
+## Architecture
+
+```text
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   SvelteKit     │────▶│   FastAPI       │────▶│   PostgreSQL    │
+│   Frontend      │     │   Backend       │     │   + pgvector    │
+└─────────────────┘     └────────┬────────┘     └─────────────────┘
+                                 │
+                                 ▼
+                        ┌─────────────────┐
+                        │   LLM (Ollama   │
+                        │   or OpenAI)    │
+                        └─────────────────┘
+```
+
+## Project Structure
+
+```text
+community-resilience-mvp/
+├── backend/
+│   ├── app.py              # FastAPI application
+│   ├── config.py           # Environment configuration
+│   ├── db.py               # Database connection
+│   ├── llm_client.py       # LLM wrapper
+│   ├── models/
+│   │   └── models.py       # SQLAlchemy models
+│   ├── services/
+│   │   ├── embeddings.py   # Text embeddings
+│   │   ├── retrieval.py    # Vector search
+│   │   └── reasoning.py    # LLM reasoning
+│   ├── alembic/            # Database migrations
+│   ├── seed_data/          # Initial data
+│   └── scripts/            # Utility scripts
+├── frontend/
+│   ├── src/
+│   │   ├── routes/         # SvelteKit pages
+│   │   ├── lib/            # Shared components and API client
+│   │   └── app.css         # Global styles
+│   ├── package.json
+│   └── svelte.config.js
+├── docs/                   # Documentation
+├── docker-compose.yml
+├── .env.example
+└── README.md
+```
+
+## Documentation
+
+- [Gap Analysis](docs/GAP-ANALYSIS.md) - Identified gaps and priorities
+- [Implementation Plan](docs/IMPLEMENTATION-PLAN.md) - Detailed implementation guide
+- [MVP Scope](docs/5.minimal-viable-prototype.md) - MVP definition
+
+## License
+
+MIT

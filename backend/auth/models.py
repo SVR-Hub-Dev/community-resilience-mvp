@@ -1,0 +1,98 @@
+"""SQLAlchemy ORM models for authentication."""
+
+from enum import Enum as PyEnum
+
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, ARRAY
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+
+from models.models import Base
+
+
+class UserRole(str, PyEnum):
+    """User role enumeration for RBAC."""
+
+    ADMIN = "admin"
+    EDITOR = "editor"
+    VIEWER = "viewer"
+
+
+class User(Base):
+    """
+    User account model.
+
+    Supports both OAuth login (Google/GitHub) and API key authentication.
+    """
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default=UserRole.VIEWER.value)
+    oauth_provider = Column(String(50))  # 'google', 'github', or NULL
+    oauth_id = Column(String(255))  # Provider's unique user ID
+    avatar_url = Column(String(500))
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+    sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
+
+
+class APIKey(Base):
+    """
+    API Key for service-to-service authentication.
+
+    Keys are stored as SHA-256 hashes. The plaintext key is only
+    shown once during creation.
+    """
+
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)
+    key_prefix = Column(String(12), nullable=False)  # First chars for identification (e.g., "cr_abc123")
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    scopes = Column(ARRAY(String))  # Optional permission scopes
+    last_used_at = Column(DateTime(timezone=True))
+    expires_at = Column(DateTime(timezone=True))
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="api_keys")
+
+    def __repr__(self):
+        return f"<APIKey(id={self.id}, name='{self.name}', prefix='{self.key_prefix}')>"
+
+
+class Session(Base):
+    """
+    User session for JWT refresh tokens.
+
+    Tracks active sessions and enables logout functionality.
+    """
+
+    __tablename__ = "sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    refresh_token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    user_agent = Column(String(500))
+    ip_address = Column(String(45))  # Supports IPv6
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="sessions")
+
+    def __repr__(self):
+        return f"<Session(id={self.id}, user_id={self.user_id})>"
