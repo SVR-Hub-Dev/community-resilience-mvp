@@ -20,20 +20,27 @@ bearer_scheme = HTTPBearer(auto_error=False)
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: Session = Depends(get_db),
+    request: Request = None,
 ) -> User:
     """
     Get the current authenticated user from JWT or API key.
 
     Raises HTTPException 401 if not authenticated.
     """
-    if not credentials:
+    token = None
+    if credentials:
+        token = credentials.credentials
+    else:
+        # Try to get token from cookie
+        if request is not None:
+            token = request.cookies.get("access_token")
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    token = credentials.credentials
 
     # Try JWT first
     payload = auth_service.verify_access_token(token)
@@ -87,7 +94,9 @@ def require_role(allowed_roles: List[str]):
 
     async def role_checker(user: User = Depends(get_current_user)) -> User:
         if user.role not in allowed_roles:
-            logger.warning(f"Access denied for user {user.email} (role: {user.role}), required: {allowed_roles}")
+            logger.warning(
+                f"Access denied for user {user.email} (role: {user.role}), required: {allowed_roles}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions. Required role: {', '.join(allowed_roles)}",
@@ -100,4 +109,6 @@ def require_role(allowed_roles: List[str]):
 # Convenience dependencies for common role combinations
 require_admin = require_role([UserRole.ADMIN.value])
 require_editor = require_role([UserRole.ADMIN.value, UserRole.EDITOR.value])
-require_viewer = require_role([UserRole.ADMIN.value, UserRole.EDITOR.value, UserRole.VIEWER.value])
+require_viewer = require_role(
+    [UserRole.ADMIN.value, UserRole.EDITOR.value, UserRole.VIEWER.value]
+)

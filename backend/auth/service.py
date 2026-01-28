@@ -1,12 +1,17 @@
-"""Authentication service - JWT, hashing, and verification logic."""
+"""Authentication service - JWT, hashing, password, and TOTP logic."""
 
 import hashlib
+import io
 import secrets
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 import jwt
+import pyotp
+import qrcode
+import qrcode.image.svg
+import bcrypt
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -32,7 +37,9 @@ class AuthService:
 
     def create_access_token(self, user_id: int, role: str) -> str:
         """Create a JWT access token."""
-        expire = datetime.now(timezone.utc) + timedelta(minutes=self.access_token_expire_minutes)
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=self.access_token_expire_minutes
+        )
         payload = {
             "sub": str(user_id),
             "role": role,
@@ -117,7 +124,9 @@ class AuthService:
             return None
 
         # Check expiration
-        if api_key_record.expires_at and api_key_record.expires_at < datetime.now(timezone.utc):
+        if api_key_record.expires_at and api_key_record.expires_at < datetime.now(
+            timezone.utc
+        ):
             logger.debug(f"API key expired: {api_key_record.key_prefix}")
             return None
 
@@ -126,11 +135,17 @@ class AuthService:
         db.commit()
 
         # Get the user
-        user = db.query(User).filter(User.id == api_key_record.user_id, User.is_active == True).first()
+        user = (
+            db.query(User)
+            .filter(User.id == api_key_record.user_id, User.is_active == True)
+            .first()
+        )
         if not user:
             return None
 
-        logger.info(f"API key authenticated: {api_key_record.key_prefix} for user {user.email}")
+        logger.info(
+            f"API key authenticated: {api_key_record.key_prefix} for user {user.email}"
+        )
         return user
 
     # ========================================================================
@@ -160,7 +175,8 @@ class AuthService:
             refresh_token_hash=self.hash_token(refresh_token),
             user_agent=user_agent[:500] if user_agent else None,
             ip_address=ip_address,
-            expires_at=datetime.now(timezone.utc) + timedelta(days=self.refresh_token_expire_days),
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(days=self.refresh_token_expire_days),
         )
         db.add(session)
         db.commit()
@@ -168,7 +184,9 @@ class AuthService:
         logger.info(f"Session created for user {user.email}")
         return access_token, refresh_token
 
-    def refresh_access_token(self, db: Session, refresh_token: str) -> Optional[tuple[str, User]]:
+    def refresh_access_token(
+        self, db: Session, refresh_token: str
+    ) -> Optional[tuple[str, User]]:
         """
         Refresh an access token using a refresh token.
 
@@ -191,7 +209,11 @@ class AuthService:
             return None
 
         # Get the user
-        user = db.query(User).filter(User.id == session.user_id, User.is_active == True).first()
+        user = (
+            db.query(User)
+            .filter(User.id == session.user_id, User.is_active == True)
+            .first()
+        )
         if not user:
             logger.debug("User not found or inactive for refresh token")
             return None
@@ -210,7 +232,11 @@ class AuthService:
             bool: True if session was found and deleted
         """
         token_hash = self.hash_token(refresh_token)
-        result = db.query(UserSession).filter(UserSession.refresh_token_hash == token_hash).delete()
+        result = (
+            db.query(UserSession)
+            .filter(UserSession.refresh_token_hash == token_hash)
+            .delete()
+        )
         db.commit()
 
         if result > 0:
@@ -246,6 +272,108 @@ class AuthService:
         if result > 0:
             logger.info(f"Cleaned up {result} expired sessions")
         return result
+
+    # ========================================================================
+    # Password Operations
+    # ========================================================================
+
+    def hash_password(self, password: str) -> str:
+        """Hash a password using bcrypt."""
+        return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+    def verify_password(self, password: str, password_hash: str) -> bool:
+        """Verify a password against its hash."""
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+
+    def register_user(
+        self,
+        db: Session,
+        email: str,
+        password: str,
+        name: str,
+    ) -> User:
+        """
+        Register a new user with email/password.
+
+        Raises ValueError if email is already taken.
+        """
+        existing = db.query(User).filter(User.email == email).first()
+        if existing:
+            raise ValueError("Email already registered")
+
+        user = User(
+            email=email,
+            name=name,
+            password_hash=self.hash_password(password),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        logger.info(f"New password user registered: {user.email}")
+        return user
+
+    def authenticate_user(
+        self, db: Session, email: str, password: str
+    ) -> Optional[User]:
+        """
+        Authenticate a user with email/password.
+
+        Returns the User if credentials are valid, None otherwise.
+        """
+        user = (
+            db.query(User).filter(User.email == email, User.is_active == True).first()
+        )
+        if not user or not user.password_hash:
+            return None
+        if not self.verify_password(password, user.password_hash):
+            return None
+        return user
+
+    # ========================================================================
+    # TOTP Operations
+    # ========================================================================
+
+    def generate_totp_secret(self) -> str:
+        """Generate a random base32-encoded TOTP secret."""
+        return pyotp.random_base32()
+
+    def get_totp_provisioning_uri(self, secret: str, email: str) -> str:
+        """Get the otpauth:// provisioning URI for authenticator apps."""
+        totp = pyotp.TOTP(secret)
+        return totp.provisioning_uri(name=email, issuer_name="Community Resilience")
+
+    def generate_totp_qr_svg(self, provisioning_uri: str) -> str:
+        """Generate an SVG QR code for the TOTP provisioning URI."""
+        img = qrcode.make(provisioning_uri, image_factory=qrcode.image.svg.SvgPathImage)
+        stream = io.BytesIO()
+        img.save(stream)
+        return stream.getvalue().decode()
+
+    def verify_totp_code(self, secret: str, code: str) -> bool:
+        """Verify a TOTP code with a 1-step tolerance window."""
+        totp = pyotp.TOTP(secret)
+        return totp.verify(code, valid_window=1)
+
+    def create_totp_pending_token(self, user_id: int) -> str:
+        """Create a short-lived JWT for TOTP verification during login."""
+        expire = datetime.now(timezone.utc) + timedelta(minutes=5)
+        payload = {
+            "sub": str(user_id),
+            "type": "totp_pending",
+            "exp": expire,
+            "iat": datetime.now(timezone.utc),
+        }
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
+    def verify_totp_pending_token(self, token: str) -> Optional[int]:
+        """Verify a TOTP pending token and return the user_id."""
+        try:
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+            if payload.get("type") != "totp_pending":
+                return None
+            return int(payload["sub"])
+        except jwt.InvalidTokenError:
+            return None
 
     # ========================================================================
     # User Operations
@@ -287,12 +415,16 @@ class AuthService:
         # Try to find by email (linking accounts)
         user = db.query(User).filter(User.email == email).first()
         if user:
-            # Link OAuth to existing account
+            # Link OAuth to existing account, preserving existing role and settings
             user.oauth_provider = oauth_provider
             user.oauth_id = oauth_id
             user.avatar_url = avatar_url or user.avatar_url
+            # Note: We preserve the existing role and other user settings
+            # Don't overwrite role, password_hash, totp_enabled, etc.
             db.commit()
-            logger.info(f"OAuth linked to existing user {user.email}")
+            logger.info(
+                f"OAuth linked to existing user {user.email}, preserving role: {user.role}"
+            )
             return user
 
         # Create new user

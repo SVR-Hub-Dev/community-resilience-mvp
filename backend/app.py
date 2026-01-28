@@ -7,12 +7,21 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from config import settings
 from db import get_db
-from models.models import CommunityKnowledge, CommunityAsset, CommunityEvent, ModelFeedbackLog
+from models.models import (
+    CommunityKnowledge,
+    CommunityAsset,
+    CommunityEvent,
+    ModelFeedbackLog,
+)
 from auth.router import router as auth_router
+from api.kg_router import router as kg_router
+from api.documents import router as documents_router
+from api.sync import router as sync_router
 from auth.dependencies import require_viewer, require_editor
 from auth.models import User
 from services.embeddings import embed_text
@@ -22,16 +31,17 @@ from llm_client import llm
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
 # --- Pydantic Models ---
 
+
 class KnowledgeIn(BaseModel):
     """Input model for creating knowledge entries."""
+
     title: str
     description: str
     tags: Optional[List[str]] = None
@@ -42,6 +52,7 @@ class KnowledgeIn(BaseModel):
 
 class KnowledgeOut(BaseModel):
     """Output model for knowledge entries."""
+
     id: int
     title: str
     description: str
@@ -56,11 +67,13 @@ class KnowledgeOut(BaseModel):
 
 class QueryIn(BaseModel):
     """Input model for reasoning queries."""
+
     text: str
 
 
 class ActionOut(BaseModel):
     """Output model for recommended actions."""
+
     priority: int
     action: str
     rationale: str
@@ -68,6 +81,7 @@ class ActionOut(BaseModel):
 
 class QueryOut(BaseModel):
     """Output model for reasoning responses."""
+
     summary: str
     actions: List[ActionOut]
     retrieved_knowledge_ids: List[int]
@@ -77,6 +91,7 @@ class QueryOut(BaseModel):
 
 class FeedbackIn(BaseModel):
     """Input model for feedback submission."""
+
     log_id: int
     rating: int
     comments: Optional[str] = None
@@ -84,6 +99,7 @@ class FeedbackIn(BaseModel):
 
 class EventIn(BaseModel):
     """Input model for event ingestion."""
+
     event_type: str
     description: str
     location: Optional[str] = None
@@ -93,6 +109,7 @@ class EventIn(BaseModel):
 
 class AssetIn(BaseModel):
     """Input model for asset ingestion."""
+
     name: str
     asset_type: str
     description: Optional[str] = None
@@ -104,12 +121,14 @@ class AssetIn(BaseModel):
 
 class HealthOut(BaseModel):
     """Output model for health check."""
+
     status: str
     database: bool
     llm: bool
 
 
 # --- Application Lifecycle ---
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -133,24 +152,32 @@ app = FastAPI(
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        settings.frontend_url,
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include authentication router
+# Include routers
 app.include_router(auth_router)
+app.include_router(kg_router)
+app.include_router(documents_router)
+app.include_router(sync_router)
 
 
 # --- Health Check ---
+
 
 @app.get("/health", response_model=HealthOut)
 async def health_check(db: Session = Depends(get_db)):
     """Check API health and dependencies."""
     # Check database
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_healthy = True
     except Exception:
         db_healthy = False
@@ -168,6 +195,7 @@ async def health_check(db: Session = Depends(get_db)):
 
 
 # --- Knowledge Endpoints ---
+
 
 @app.post("/ingest", response_model=dict)
 def ingest_knowledge(
@@ -224,9 +252,11 @@ def get_knowledge(
     db: Session = Depends(get_db),
 ):
     """Get a specific knowledge entry. Requires viewer role."""
-    entry = db.query(CommunityKnowledge).filter(
-        CommunityKnowledge.id == knowledge_id
-    ).first()
+    entry = (
+        db.query(CommunityKnowledge)
+        .filter(CommunityKnowledge.id == knowledge_id)
+        .first()
+    )
 
     if not entry:
         raise HTTPException(status_code=404, detail="Knowledge entry not found")
@@ -242,9 +272,11 @@ def update_knowledge(
     db: Session = Depends(get_db),
 ):
     """Update a knowledge entry. Requires editor role."""
-    entry = db.query(CommunityKnowledge).filter(
-        CommunityKnowledge.id == knowledge_id
-    ).first()
+    entry = (
+        db.query(CommunityKnowledge)
+        .filter(CommunityKnowledge.id == knowledge_id)
+        .first()
+    )
 
     if not entry:
         raise HTTPException(status_code=404, detail="Knowledge entry not found")
@@ -268,9 +300,11 @@ def delete_knowledge(
     db: Session = Depends(get_db),
 ):
     """Delete a knowledge entry. Requires editor role."""
-    entry = db.query(CommunityKnowledge).filter(
-        CommunityKnowledge.id == knowledge_id
-    ).first()
+    entry = (
+        db.query(CommunityKnowledge)
+        .filter(CommunityKnowledge.id == knowledge_id)
+        .first()
+    )
 
     if not entry:
         raise HTTPException(status_code=404, detail="Knowledge entry not found")
@@ -281,6 +315,7 @@ def delete_knowledge(
 
 
 # --- Query/Reasoning Endpoint ---
+
 
 @app.post("/query", response_model=QueryOut)
 async def query_reasoning(
@@ -334,6 +369,7 @@ async def query_reasoning(
 
 # --- Feedback Endpoint ---
 
+
 @app.post("/feedback", response_model=dict)
 def submit_feedback(
     payload: FeedbackIn,
@@ -341,9 +377,9 @@ def submit_feedback(
     db: Session = Depends(get_db),
 ):
     """Submit feedback on a reasoning response. Requires viewer role."""
-    log = db.query(ModelFeedbackLog).filter(
-        ModelFeedbackLog.id == payload.log_id
-    ).first()
+    log = (
+        db.query(ModelFeedbackLog).filter(ModelFeedbackLog.id == payload.log_id).first()
+    )
 
     if not log:
         raise HTTPException(status_code=404, detail="Log entry not found")
@@ -357,6 +393,7 @@ def submit_feedback(
 
 
 # --- Event Endpoints ---
+
 
 @app.post("/events", response_model=dict)
 def ingest_event(
@@ -414,6 +451,7 @@ def list_events(
 
 
 # --- Asset Endpoints ---
+
 
 @app.post("/assets", response_model=dict)
 def ingest_asset(

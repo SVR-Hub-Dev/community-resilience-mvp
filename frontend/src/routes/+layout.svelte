@@ -3,6 +3,7 @@
 	import '../app.css';
 	import { initAuth, getAuthState, clearAuth, getRefreshToken } from '$lib/auth.svelte';
 	import { api } from '$lib/api';
+	import { initTheme } from '$lib/theme';
 
 	let { children } = $props();
 
@@ -11,6 +12,7 @@
 
 	onMount(() => {
 		initAuth();
+		initTheme(); // Initialize theme on mount
 	});
 
 	async function handleLogout() {
@@ -42,12 +44,15 @@
 	<header class="header">
 		<div class="container header-inner">
 			<a href="/" class="logo">
-				<span class="logo-icon">🏘️</span>
-				<span class="logo-text">Community Resilience</span>
+				<img src="/SVRLogo.png" alt="Logo" class="logo-icon" style="width: 1.5em; height: 1.5em; vertical-align: middle;" />
+				<span class="logo-text">Resilience Hub</span>
 			</a>
+			<h1 class="site-heading" style="margin: 0 2rem; font-size: 1.5rem; font-weight: 700; color: var(--primary, #2563eb); text-align: center;">Batlow Community Knowledge Base</h1>
 			<nav class="nav">
 				<a href="/" class="nav-link">Query</a>
-				<a href="/knowledge" class="nav-link">Knowledge Base</a>
+				<a href="/knowledge" class="nav-link">Knowledge</a>
+				<a href="/knowledge-graph" class="nav-link">Graph</a>
+				<a href="/documents" class="nav-link">Documents</a>
 				<a href="/events" class="nav-link">Events</a>
 				<a href="/assets" class="nav-link">Assets</a>
 
@@ -77,7 +82,16 @@
 						</button>
 
 						{#if showUserMenu}
-							<div class="user-dropdown" onclick={(e) => e.stopPropagation()}>
+							<div
+								class="user-dropdown"
+								onclick={(e) => e.stopPropagation()}
+								onkeydown={(e) => {
+									if (e.key === 'Escape' || e.key === 'Esc') closeUserMenu();
+								}}
+								role="menu"
+								tabindex="0"
+								aria-label="User menu"
+							>
 								<div class="dropdown-header">
 									<span class="dropdown-email">{auth.user.email}</span>
 									<span class="dropdown-role">{auth.user.role}</span>
@@ -100,6 +114,15 @@
 										/>
 									</svg>
 									API Keys
+								</a>
+								<a href="/settings" class="dropdown-item" onclick={closeUserMenu}>
+									<svg viewBox="0 0 20 20" width="16" height="16">
+										<path
+											fill="currentColor"
+											d="M10 2a1 1 0 011 1v1.07a7.001 7.001 0 014.243 4.243H17a1 1 0 110 2h-1.07a7.001 7.001 0 01-4.243 4.243V17a1 1 0 11-2 0v-1.07a7.001 7.001 0 01-4.243-4.243H3a1 1 0 110-2h1.07a7.001 7.001 0 014.243-4.243V3a1 1 0 011-1zm0 3a5 5 0 100 10A5 5 0 0010 5z"
+										/>
+									</svg>
+									Settings
 								</a>
 								{#if auth.isAdmin}
 									<div class="dropdown-divider"></div>
@@ -217,6 +240,9 @@
 
 	.user-menu-container {
 		position: relative;
+		display: flex;
+		align-items: center;
+		height: 100%;
 	}
 
 	.user-button {
@@ -272,14 +298,16 @@
 
 	.user-dropdown {
 		position: absolute;
-		top: calc(100% + 8px);
+		top: 100%;
 		right: 0;
 		min-width: 220px;
 		background: var(--surface);
 		border: 1px solid var(--border);
 		border-radius: 8px;
 		box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-		z-index: 200;
+		z-index: 9999;
+		margin-top: 0.5rem;
+		display: block;
 	}
 
 	.dropdown-header {

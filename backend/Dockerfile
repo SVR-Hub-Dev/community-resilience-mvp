@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Cloud deployment mode — basic PDF extraction only
+ENV DEPLOYMENT_MODE=cloud
+
 # Expose port
 EXPOSE 8000
 

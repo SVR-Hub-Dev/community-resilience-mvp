@@ -52,12 +52,30 @@ class UserOut(BaseModel):
     role: str
     oauth_provider: Optional[str] = None
     avatar_url: Optional[str] = None
+    has_password: bool = False
+    totp_enabled: bool = False
     is_active: bool
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_user(cls, user) -> "UserOut":
+        return cls(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            role=user.role,
+            oauth_provider=user.oauth_provider,
+            avatar_url=user.avatar_url,
+            has_password=user.password_hash is not None,
+            totp_enabled=user.totp_enabled or False,
+            is_active=user.is_active,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+        )
 
 
 class UserListOut(BaseModel):
@@ -175,3 +193,65 @@ class MessageResponse(BaseModel):
     """Simple message response."""
 
     message: str
+
+
+# ============================================================================
+# Password Auth Schemas
+# ============================================================================
+
+class RegisterRequest(BaseModel):
+    """Schema for registering with email/password."""
+
+    email: EmailStr
+    password: str
+    name: str
+
+
+class LoginRequest(BaseModel):
+    """Schema for logging in with email/password."""
+
+    email: EmailStr
+    password: str
+
+
+class LoginResponse(BaseModel):
+    """Login response - either tokens or TOTP challenge."""
+
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+    expires_in: Optional[int] = None
+    totp_required: bool = False
+    totp_token: Optional[str] = None
+
+
+# ============================================================================
+# TOTP Schemas
+# ============================================================================
+
+class SetPasswordRequest(BaseModel):
+    """Schema for setting or changing password."""
+
+    new_password: str
+    current_password: Optional[str] = None  # Required if user already has a password
+
+
+class TOTPSetupResponse(BaseModel):
+    """Response with TOTP setup info (secret + QR code)."""
+
+    secret: str
+    provisioning_uri: str
+    qr_svg: str
+
+
+class TOTPVerifyRequest(BaseModel):
+    """Request to verify a TOTP code."""
+
+    code: str
+
+
+class TOTPLoginRequest(BaseModel):
+    """Request to complete login with TOTP."""
+
+    totp_token: str
+    code: str

@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: community_resilience_local_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-community_resilience}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Ollama for local LLM inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: community_resilience_local_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data_local:/root/.ollama
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+    restart: unless-stopped
+    # After first start, pull the model:
+    # docker exec community_resilience_local_ollama ollama pull llama3.2
+
+  # FastAPI Backend — local mode with full Docling processing
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.local
+    container_name: community_resilience_local_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DEPLOYMENT_MODE: local
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-community_resilience}
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-CHANGE-ME-IN-PRODUCTION-use-secure-random-string}
+      UPLOAD_DIR: /data/uploads
+      # Sync config (for pulling from cloud)
+      SYNC_ENABLED: ${SYNC_ENABLED:-false}
+      SYNC_SERVER_URL: ${SYNC_SERVER_URL:-}
+      SYNC_API_KEY: ${SYNC_API_KEY:-}
+      SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-15}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - document_storage:/data/uploads
+    restart: unless-stopped
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+
+  # Sync worker — pulls unprocessed docs from cloud, processes locally, pushes back
+  # Activate with: docker compose -f docker-compose.local.yml --profile sync up -d
+  sync-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.local
+    container_name: community_resilience_local_sync_worker
+    profiles:
+      - sync
+    environment:
+      DEPLOYMENT_MODE: local
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-community_resilience}
+      SYNC_ENABLED: "true"
+      SYNC_SERVER_URL: ${SYNC_SERVER_URL:?Set SYNC_SERVER_URL to the cloud instance URL}
+      SYNC_API_KEY: ${SYNC_API_KEY:?Set SYNC_API_KEY to match the cloud instance}
+      SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-15}
+      UPLOAD_DIR: /data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - document_storage:/data/uploads
+    restart: unless-stopped
+    command: python -m services.sync_worker
+
+  # SvelteKit Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: community_resilience_local_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://backend:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+volumes:
+  pgdata_local:
+    driver: local
+  ollama_data_local:
+    driver: local
+  document_storage:
+    driver: local

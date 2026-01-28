@@ -1,0 +1,17 @@
+# Additional dependencies for local deployment with full document processing
+# Install with: pip install -r requirements.txt -r requirements-local.txt
+
+# Docling for advanced document processing
+docling>=1.0.0
+
+# File type detection
+python-magic>=0.4.27
+
+# PDF to image conversion (for OCR)
+pdf2image>=1.16.3
+
+# Ollama client for local LLM
+ollama>=0.1.0
+
+  # Add 'pytest' if not present
+pytest

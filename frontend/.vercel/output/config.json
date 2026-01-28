@@ -15,16 +15,52 @@
 			"dest": "/"
 		},
 		{
+			"src": "^/admin/users/?(?:/__data.json)?$",
+			"dest": "/admin/users"
+		},
+		{
+			"src": "^/api-keys/?(?:/__data.json)?$",
+			"dest": "/api-keys"
+		},
+		{
 			"src": "^/assets/?(?:/__data.json)?$",
 			"dest": "/assets"
+		},
+		{
+			"src": "^/auth/callback/?(?:/__data.json)?$",
+			"dest": "/auth/callback"
+		},
+		{
+			"src": "^/auth/login/?(?:/__data.json)?$",
+			"dest": "/auth/login"
+		},
+		{
+			"src": "^/auth/register/?(?:/__data.json)?$",
+			"dest": "/auth/register"
+		},
+		{
+			"src": "^/documents/?(?:/__data.json)?$",
+			"dest": "/documents"
 		},
 		{
 			"src": "^/events/?(?:/__data.json)?$",
 			"dest": "/events"
 		},
 		{
+			"src": "^/knowledge-graph/?(?:/__data.json)?$",
+			"dest": "/knowledge-graph"
+		},
+		{
+			"src": "^/knowledge-graph/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/knowledge-graph/[id]"
+		},
+		{
 			"src": "^/knowledge/?(?:/__data.json)?$",
 			"dest": "/knowledge"
+		},
+		{
+			"src": "^/settings/?(?:/__data.json)?$",
+			"dest": "/settings"
 		},
 		{
 			"src": "/.*",

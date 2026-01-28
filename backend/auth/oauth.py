@@ -1,4 +1,4 @@
-"""OAuth provider implementations for Google and GitHub."""
+"""OAuth provider implementations for Google, GitHub, and Microsoft."""
 
 import secrets
 import logging
@@ -67,7 +67,7 @@ class GoogleOAuth(OAuthProvider):
 
     def get_authorization_url(self, state: str) -> str:
         params = {
-            "client_id": settings.google_client_id,
+            "client_id": settings.effective_google_client_id,
             "redirect_uri": settings.google_redirect_uri,
             "response_type": "code",
             "scope": "openid email profile",
@@ -83,8 +83,8 @@ class GoogleOAuth(OAuthProvider):
                 response = await client.post(
                     self.TOKEN_URL,
                     data={
-                        "client_id": settings.google_client_id,
-                        "client_secret": settings.google_client_secret,
+                        "client_id": settings.effective_google_client_id,
+                        "client_secret": settings.effective_google_client_secret,
                         "code": code,
                         "grant_type": "authorization_code",
                         "redirect_uri": settings.google_redirect_uri,
@@ -133,7 +133,7 @@ class GitHubOAuth(OAuthProvider):
 
     def get_authorization_url(self, state: str) -> str:
         params = {
-            "client_id": settings.github_client_id,
+            "client_id": settings.effective_github_client_id,
             "redirect_uri": settings.github_redirect_uri,
             "scope": "user:email read:user",
             "state": state,
@@ -147,8 +147,8 @@ class GitHubOAuth(OAuthProvider):
                     self.TOKEN_URL,
                     headers={"Accept": "application/json"},
                     data={
-                        "client_id": settings.github_client_id,
-                        "client_secret": settings.github_client_secret,
+                        "client_id": settings.effective_github_client_id,
+                        "client_secret": settings.effective_github_client_secret,
                         "code": code,
                         "redirect_uri": settings.github_redirect_uri,
                     },
@@ -223,10 +223,80 @@ class GitHubOAuth(OAuthProvider):
             return None
 
 
+class MicrosoftOAuth(OAuthProvider):
+    """Microsoft OAuth 2.0 implementation using Microsoft Entra ID."""
+
+    AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+    TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+    USERINFO_URL = "https://graph.microsoft.com/v1.0/me"
+
+    @property
+    def name(self) -> str:
+        return "microsoft"
+
+    def get_authorization_url(self, state: str) -> str:
+        params = {
+            "client_id": settings.effective_microsoft_client_id,
+            "redirect_uri": settings.microsoft_redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile User.Read",
+            "state": state,
+            "prompt": "select_account",
+        }
+        return f"{self.AUTH_URL}?{urlencode(params)}"
+
+    async def exchange_code(self, code: str) -> Optional[str]:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.TOKEN_URL,
+                    data={
+                        "client_id": settings.effective_microsoft_client_id,
+                        "client_secret": settings.effective_microsoft_client_secret,
+                        "code": code,
+                        "grant_type": "authorization_code",
+                        "redirect_uri": settings.microsoft_redirect_uri,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data.get("access_token")
+            except httpx.HTTPError as e:
+                logger.error(f"Microsoft token exchange failed: {e}")
+                return None
+
+    async def get_user_info(self, access_token: str) -> Optional[OAuthUserInfo]:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    self.USERINFO_URL,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                email = data.get("mail") or data.get("userPrincipalName")
+                if not email:
+                    logger.error("Microsoft user has no email")
+                    return None
+
+                return OAuthUserInfo(
+                    provider="microsoft",
+                    id=data["id"],
+                    email=email,
+                    name=data.get("displayName", email.split("@")[0]),
+                    avatar_url=None,
+                )
+            except httpx.HTTPError as e:
+                logger.error(f"Microsoft userinfo failed: {e}")
+                return None
+
+
 # Provider registry
 OAUTH_PROVIDERS = {
     "google": GoogleOAuth(),
     "github": GitHubOAuth(),
+    "microsoft": MicrosoftOAuth(),
 }
 
 

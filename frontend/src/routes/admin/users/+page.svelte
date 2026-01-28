@@ -5,26 +5,37 @@
 	import { getAuthState } from '$lib/auth.svelte';
 	import type { User, UserRole } from '$lib/types';
 
-	const auth = getAuthState();
+	const authState = getAuthState();
 
 	let users = $state<User[]>([]);
 	let total = $state(0);
-	let isLoading = $state(true);
+	let loadingState = $state(true);
 	let error = $state<string | null>(null);
 	let editingUser = $state<User | null>(null);
 	let editRole = $state<UserRole>('viewer');
 	let editIsActive = $state(true);
 
 	onMount(async () => {
-		if (!auth.isAuthenticated || !auth.isAdmin) {
-			goto('/');
-			return;
-		}
-		await loadUsers();
+		// Wait a moment for auth state to potentially update
+		setTimeout(async () => {
+			console.log('Admin users page mount - auth state:', {
+				isAuthenticated: authState.isAuthenticated,
+				isAdmin: authState.isAdmin,
+				user: authState.user
+			});
+			
+			if (!authState.isAuthenticated || !authState.isAdmin) {
+				console.log('Redirecting - not authenticated or not admin');
+				goto('/');
+				return;
+			}
+			console.log('Loading users...');
+			await loadUsers();
+		}, 100);
 	});
 
 	async function loadUsers() {
-		isLoading = true;
+		loadingState = true;
 		error = null;
 		try {
 			const response = await api.auth.admin.getUsers({ limit: 100 });
@@ -33,7 +44,7 @@
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load users';
 		}
-		isLoading = false;
+		loadingState = false;
 	}
 
 	function startEdit(user: User) {
@@ -100,7 +111,7 @@
 			<h2>Users ({total})</h2>
 		</div>
 
-		{#if isLoading}
+		{#if loadingState}
 			<div class="loading">Loading...</div>
 		{:else if users.length === 0}
 			<div class="empty-state">
@@ -120,6 +131,8 @@
 				</thead>
 				<tbody>
 					{#each users as user}
+						<!-- DEBUG: user={JSON.stringify(user)} -->
+						<!-- {@debug user} -->
 						<tr>
 							<td>
 								<div class="user-info">
@@ -131,13 +144,23 @@
 										</span>
 									{/if}
 									<div>
-										<span class="user-name">{user.name}</span>
+										<span class="user-name">
+											{user.name}
+											{#if user.id === authState.user?.id}
+												<span class="current-user-badge">Current User</span>
+											{/if}
+										</span>
 										<span class="user-email">{user.email}</span>
 									</div>
 								</div>
 							</td>
 							<td>
-								<span class="role-badge role-{user.role}">{user.role}</span>
+								<span class="role-badge role-{user.role}">
+									{user.role}
+									{#if !user.has_password && user.oauth_provider === null}
+										<span class="api-only-indicator">API Only</span>
+									{/if}
+								</span>
 							</td>
 							<td>{user.oauth_provider || '-'}</td>
 							<td>
@@ -148,10 +171,12 @@
 							<td>{new Date(user.created_at).toLocaleDateString()}</td>
 							<td>
 								<div class="actions">
-									<button class="btn btn-secondary btn-sm" onclick={() => startEdit(user)}>
-										Edit
-									</button>
-									{#if user.id !== auth.user?.id}
+									{#if authState.isAdmin && user.id !== authState.user?.id && (user.has_password || user.oauth_provider)}
+										<button class="btn btn-secondary btn-sm" onclick={() => startEdit(user)}>
+											Edit
+										</button>
+									{/if}
+									{#if authState.isAdmin && user.id !== authState.user?.id && (user.has_password || user.oauth_provider) && user.role !== 'admin'}
 										<button class="btn btn-danger btn-sm" onclick={() => deleteUser(user)}>
 											Delete
 										</button>
@@ -167,9 +192,13 @@
 </div>
 
 {#if editingUser}
-	<div class="modal-overlay" onclick={cancelEdit}>
-		<div class="modal" onclick={(e) => e.stopPropagation()}>
-			<h2>Edit User</h2>
+		<div class="modal-overlay" onclick={cancelEdit} onkeydown={(e) => {
+		if (e.key === 'Escape') {
+			cancelEdit();
+		}
+	}} role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+		<div class="modal">
+			<h2 id="modal-title">Edit User</h2>
 			<div class="user-info modal-user">
 				{#if editingUser.avatar_url}
 					<img src={editingUser.avatar_url} alt="" class="user-avatar" />
@@ -349,6 +378,26 @@
 	.role-badge.role-viewer {
 		background: #f3f4f6;
 		color: #374151;
+	}
+
+	.api-only-indicator {
+		margin-left: 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #ef4444;
+		background: rgba(239, 68, 68, 0.1);
+		padding: 0.125rem 0.375rem;
+		border-radius: 3px;
+	}
+
+	.current-user-badge {
+		margin-left: 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #059669;
+		background: rgba(5, 150, 105, 0.1);
+		padding: 0.125rem 0.375rem;
+		border-radius: 3px;
 	}
 
 	.status-badge {

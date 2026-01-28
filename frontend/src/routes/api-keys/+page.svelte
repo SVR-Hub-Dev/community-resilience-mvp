@@ -162,9 +162,13 @@
 </div>
 
 {#if showCreateModal && !createdKey}
-	<div class="modal-overlay" onclick={() => (showCreateModal = false)}>
-		<div class="modal" onclick={(e) => e.stopPropagation()}>
-			<h2>Create New API Key</h2>
+	<div class="modal-overlay" onclick={() => (showCreateModal = false)} onkeydown={(e) => {
+		if (e.key === 'Escape') {
+			showCreateModal = false;
+		}
+	}} role="dialog" aria-modal="true" aria-labelledby="create-modal-title" tabindex="-1">
+		<div class="modal">
+			<h2 id="create-modal-title">Create New API Key</h2>
 			<form onsubmit={(e) => { e.preventDefault(); createApiKey(); }}>
 				<div class="form-group">
 					<label for="name">Name *</label>
@@ -209,9 +213,13 @@
 {/if}
 
 {#if createdKey}
-	<div class="modal-overlay" onclick={closeCreatedKeyModal}>
-		<div class="modal" onclick={(e) => e.stopPropagation()}>
-			<h2>API Key Created</h2>
+	<div class="modal-overlay" onclick={closeCreatedKeyModal} onkeydown={(e) => {
+		if (e.key === 'Escape') {
+			closeCreatedKeyModal();
+		}
+	}} role="dialog" aria-modal="true" aria-labelledby="created-modal-title" tabindex="-1">
+		<div class="modal">
+			<h2 id="created-modal-title">API Key Created</h2>
 			<div class="warning-banner">
 				Make sure to copy your API key now. You won't be able to see it again!
 			</div>

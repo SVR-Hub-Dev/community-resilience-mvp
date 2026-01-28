@@ -27,6 +27,8 @@
 			return;
 		}
 
+		console.log('OAuth tokens received:', { accessToken: !!accessToken, refreshToken: !!refreshToken });
+
 		try {
 			// Store tokens temporarily to make the API call
 			const tempTokens = {
@@ -54,10 +56,17 @@
 			);
 
 			// Fetch user info
+			console.log('Fetching user info with tokens:', tempTokens);
 			const user = await api.auth.getMe();
+			console.log('User info received:', user);
 
 			// Update with real user data
 			setAuth(user, tempTokens);
+			console.log('Auth state after setAuth:', {
+				isAuthenticated: true,
+				user: user,
+				role: user.role
+			});
 
 			status = 'success';
 
@@ -66,6 +75,7 @@
 				goto('/');
 			}, 1500);
 		} catch (e) {
+			console.error('Failed to fetch user info:', e);
 			status = 'error';
 			errorMessage = e instanceof Error ? e.message : 'Failed to complete authentication';
 		}

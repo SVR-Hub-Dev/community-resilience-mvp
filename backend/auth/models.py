@@ -21,7 +21,7 @@ class User(Base):
     """
     User account model.
 
-    Supports both OAuth login (Google/GitHub) and API key authentication.
+    Supports OAuth login, email/password login, and API key authentication.
     """
 
     __tablename__ = "users"
@@ -30,9 +30,12 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default=UserRole.VIEWER.value)
-    oauth_provider = Column(String(50))  # 'google', 'github', or NULL
+    password_hash = Column(String(255))  # NULL for OAuth-only users
+    oauth_provider = Column(String(50))  # 'google', 'github', 'microsoft', or NULL
     oauth_id = Column(String(255))  # Provider's unique user ID
     avatar_url = Column(String(500))
+    totp_secret = Column(String(32))  # Base32-encoded TOTP secret
+    totp_enabled = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
