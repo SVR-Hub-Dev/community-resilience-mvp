@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOG_DIR="$PROJECT_ROOT/.mcp-logs"
+mkdir -p "$LOG_DIR"
+
+LOG_FILE="$LOG_DIR/svelte-mcp-$(date +%Y%m%d-%H%M%S).log"
+
+echo "[INFO] Starting Svelte MCP server" | tee -a "$LOG_FILE"
+echo "[INFO] Project root: $PROJECT_ROOT" | tee -a "$LOG_FILE"
+
+# Prefer local install
+if [ -f "$PROJECT_ROOT/node_modules/.bin/svelte-mcp" ]; then
+  echo "[INFO] Using local svelte-mcp" | tee -a "$LOG_FILE"
+  exec "$PROJECT_ROOT/node_modules/.bin/svelte-mcp" "$@" 2>&1 | tee -a "$LOG_FILE"
+fi
+
+# Fallback to global
+if command -v svelte-mcp >/dev/null 2>&1; then
+  echo "[INFO] Using global svelte-mcp" | tee -a "$LOG_FILE"
+  exec svelte-mcp "$@" 2>&1 | tee -a "$LOG_FILE"
+fi
+
+echo "[ERROR] svelte-mcp not found" | tee -a "$LOG_FILE"
+exit 1

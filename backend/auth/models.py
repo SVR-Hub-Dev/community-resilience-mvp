@@ -2,7 +2,16 @@
 
 from enum import Enum as PyEnum
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, ARRAY
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    Boolean,
+    ForeignKey,
+    ARRAY,
+)
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -38,11 +47,17 @@ class User(Base):
     totp_enabled = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
-    api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
-    sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
+    api_keys = relationship(
+        "APIKey", back_populates="user", cascade="all, delete-orphan"
+    )
+    sessions = relationship(
+        "Session", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"
@@ -59,9 +74,13 @@ class APIKey(Base):
     __tablename__ = "api_keys"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     key_hash = Column(String(64), unique=True, nullable=False, index=True)
-    key_prefix = Column(String(12), nullable=False)  # First chars for identification (e.g., "cr_abc123")
+    key_prefix = Column(
+        String(12), nullable=False
+    )  # First chars for identification (e.g., "cr_abc123")
     name = Column(String(100), nullable=False)
     description = Column(Text)
     scopes = Column(ARRAY(String))  # Optional permission scopes
@@ -87,11 +106,24 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    refresh_token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # Legacy refresh token column retained for compatibility, now nullable so
+    # new session creation paths don't need to provide it.
+    refresh_token_hash = Column(String(64), unique=True, nullable=True, index=True)
+
+    # New session_token used by SvelteKit as the browser session identifier.
+    session_token = Column(String(128), unique=True, nullable=True, index=True)
+
     user_agent = Column(String(500))
     ip_address = Column(String(45))  # Supports IPv6
+
+    # Expiration and lifecycle fields
     expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_active = Column(Boolean, default=True, index=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

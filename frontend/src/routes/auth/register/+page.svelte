@@ -1,16 +1,11 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
+	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api';
-	import { getAuthState, setAuth } from '$lib/auth.svelte';
+	import { getAuthHelpers } from '$lib/auth.svelte';
 
-	const auth = getAuthState();
-
-	let name = $state('');
-	let email = $state('');
-	let password = $state('');
-	let confirmPassword = $state('');
-	let isLoading = $state(false);
-	let error = $state<string | null>(null);
+	// If already logged in, redirect
+	let auth = $derived(getAuthHelpers($page.data.user));
 
 	$effect(() => {
 		if (auth.isAuthenticated) {
@@ -18,32 +13,12 @@
 		}
 	});
 
-	async function handleRegister(e: SubmitEvent) {
-		e.preventDefault();
-		error = null;
+	let isLoading = $state(false);
 
-		if (password.length < 8) {
-			error = 'Password must be at least 8 characters';
-			return;
-		}
-
-		if (password !== confirmPassword) {
-			error = 'Passwords do not match';
-			return;
-		}
-
-		isLoading = true;
-
-		try {
-			const result = await api.auth.register({ email, password, name });
-			setAuth(result.user, result.tokens);
-			goto('/');
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Registration failed';
-		} finally {
-			isLoading = false;
-		}
-	}
+	// Get form errors/values from server action response
+	let formError = $derived($page.form?.error as string | undefined);
+	let formEmail = $derived(($page.form?.email as string) || '');
+	let formName = $derived(($page.form?.name as string) || '');
 </script>
 
 <svelte:head>
@@ -58,16 +33,27 @@
 			<p>Join the Community Resilience platform</p>
 		</div>
 
-		{#if error}
+		{#if formError}
 			<div class="error-message">
-				{error}
+				{formError}
 			</div>
 		{/if}
 
-		<form class="register-form" onsubmit={handleRegister}>
+		<form
+			class="register-form"
+			method="POST"
+			use:enhance={() => {
+				isLoading = true;
+				return async ({ update }) => {
+					isLoading = false;
+					await update();
+				};
+			}}
+		>
 			<input
 				type="text"
-				bind:value={name}
+				name="name"
+				value={formName}
 				placeholder="Full name"
 				autocomplete="name"
 				class="form-input"
@@ -76,7 +62,8 @@
 			/>
 			<input
 				type="email"
-				bind:value={email}
+				name="email"
+				value={formEmail}
 				placeholder="Email address"
 				autocomplete="email"
 				class="form-input"
@@ -85,7 +72,7 @@
 			/>
 			<input
 				type="password"
-				bind:value={password}
+				name="password"
 				placeholder="Password (min. 8 characters)"
 				autocomplete="new-password"
 				minlength="8"
@@ -95,7 +82,7 @@
 			/>
 			<input
 				type="password"
-				bind:value={confirmPassword}
+				name="confirmPassword"
 				placeholder="Confirm password"
 				autocomplete="new-password"
 				minlength="8"
@@ -103,11 +90,7 @@
 				required
 				disabled={isLoading}
 			/>
-			<button
-				type="submit"
-				class="submit-button"
-				disabled={isLoading || !name || !email || !password || !confirmPassword}
-			>
+			<button type="submit" class="submit-button" disabled={isLoading}>
 				{isLoading ? 'Creating account...' : 'Create Account'}
 			</button>
 		</form>

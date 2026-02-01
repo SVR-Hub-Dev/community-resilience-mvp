@@ -4,6 +4,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
+		host: 'localhost',
 		proxy: {
 			'/api': {
 				target: 'http://localhost:8000',

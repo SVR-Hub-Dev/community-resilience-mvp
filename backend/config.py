@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
 
+    # Internal API Authentication (for frontend-backend communication)
+    internal_auth_secret: str = ""
+
     # OAuth - Google (accepts GOOGLE_CLIENT_ID or GOOGLE_OAUTH_CLIENT_ID)
     google_client_id: str = ""
     google_client_secret: str = ""

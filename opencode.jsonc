@@ -1,0 +1,136 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // ───────────────────────────────────────────────
+  // 1. MCP SERVER DEFINITIONS
+  // ───────────────────────────────────────────────
+  "mcp": {
+    "svelte": {
+      "type": "local",
+      "command": [
+        "./scripts/svelte-mcp"
+      ],
+      "enabled": true
+    },
+    "full-code-base": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/akeown/projects/ai/research/community-resilience/community-resilience-mvp"
+      ],
+      "enabled": true
+    },
+    "api-code-base": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/akeown/projects/ai/research/community-resilience/community-resilience-mvp/backend/api"
+      ],
+      "enabled": true
+    },
+    "auth-code-base": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/akeown/projects/ai/research/community-resilience/community-resilience-mvp/backend/auth"
+      ],
+      "enabled": true
+    },
+    "python": {
+      "type": "local",
+      "command": [
+        "backend/venv/bin/python-mcp"
+      ],
+      "enabled": true
+    },
+    "postgres": {
+      "type": "local",
+      "command": [
+        "./scripts/postgres-mcp"
+      ],
+      "enabled": false
+    },
+    "docling": {
+      "type": "local",
+      "command": [
+        "./scripts/docling-mcp"
+      ],
+      "enabled": false
+    },
+    "pymupdf": {
+      "type": "local",
+      "command": [
+        "./scripts/pymupdf-mcp"
+      ],
+      "enabled": false
+    },
+    "groq": {
+      "type": "local",
+      "command": [
+        "./scripts/groq-mcp"
+      ],
+      "enabled": false
+    },
+    "ollama": {
+      "type": "local",
+      "command": [
+        "./scripts/ollama-mcp"
+      ],
+      "enabled": false
+    }
+  },
+  // ───────────────────────────────────────────────
+  // 2. GLOBAL TOOL SAFETY
+  // Disable all tools by default.
+  // This prevents noisy or risky servers from leaking into context.
+  // ───────────────────────────────────────────────
+  "tools": {
+    "*": false
+  },
+  // ───────────────────────────────────────────────
+  // 3. PER‑AGENT TOOL ENABLEMENT
+  // Each agent gets only the tools it needs.
+  // This keeps context clean and avoids accidental exposure.
+  // ───────────────────────────────────────────────
+  "agent": {
+    "frontend": {
+      "tools": {
+        "svelte-mcp*": true,
+        "full-code-base*": true
+      }
+    },
+    "backend": {
+      "tools": {
+        "python-mcp*": true,
+        "api-code-base*": true,
+        "auth-code-base*": true
+      }
+    },
+    "data": {
+      "tools": {
+        "postgres*": true
+      }
+    },
+    "documents": {
+      "tools": {
+        "docling*": true,
+        "pymupdf*": true
+      }
+    },
+    "llm": {
+      "tools": {
+        "groq*": true
+      }
+    },
+    "local-llm": {
+      "tools": {
+        "ollama*": true
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOG_DIR="$PROJECT_ROOT/.mcp-logs"
+mkdir -p "$LOG_DIR"
+
+LOG_FILE="$LOG_DIR/pymupdf-mcp-$(date +%Y%m%d-%H%M%S).log"
+
+echo "[INFO] Starting PyMuPDF MCP server" | tee -a "$LOG_FILE"
+
+if [ -f "$PROJECT_ROOT/backend/venv/bin/pymupdf-mcp" ]; then
+  exec "$PROJECT_ROOT/backend/venv/bin/pymupdf-mcp" "$@" 2>&1 | tee -a "$LOG_FILE"
+fi
+
+if command -v pymupdf-mcp >/dev/null 2>&1; then
+  exec pymupdf-mcp "$@" 2>&1 | tee -a "$LOG_FILE"
+fi
+
+echo "[ERROR] pymupdf-mcp not found" | tee -a "$LOG_FILE"
+exit 1

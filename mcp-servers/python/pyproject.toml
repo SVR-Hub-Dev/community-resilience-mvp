@@ -1,0 +1,14 @@
+[project]
+name = "python-mcp"
+version = "0.1.0"
+description = "Python/FastAPI MCP server for OpenCode"
+requires-python = ">=3.10"
+
+dependencies = [
+    "mcp>=0.1.0",
+    "fastapi",
+    "pydantic",
+]
+
+[project.scripts]
+python-mcp = "server:main"

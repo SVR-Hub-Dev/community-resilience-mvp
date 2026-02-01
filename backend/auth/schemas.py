@@ -12,6 +12,7 @@ from auth.models import UserRole
 # User Schemas
 # ============================================================================
 
+
 class UserBase(BaseModel):
     """Base user fields."""
 
@@ -89,6 +90,7 @@ class UserListOut(BaseModel):
 # Token Schemas
 # ============================================================================
 
+
 class TokenPair(BaseModel):
     """Access and refresh token pair."""
 
@@ -114,6 +116,7 @@ class OAuthRedirect(BaseModel):
 # ============================================================================
 # API Key Schemas
 # ============================================================================
+
 
 class APIKeyCreate(BaseModel):
     """Schema for creating an API key."""
@@ -158,6 +161,7 @@ class APIKeyListOut(BaseModel):
 # Session Schemas
 # ============================================================================
 
+
 class SessionOut(BaseModel):
     """Schema for session info."""
 
@@ -167,8 +171,7 @@ class SessionOut(BaseModel):
     expires_at: datetime
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class SessionListOut(BaseModel):
@@ -181,6 +184,7 @@ class SessionListOut(BaseModel):
 # ============================================================================
 # Auth Response Schemas
 # ============================================================================
+
 
 class AuthResponse(BaseModel):
     """Complete auth response with user and tokens."""
@@ -198,6 +202,7 @@ class MessageResponse(BaseModel):
 # ============================================================================
 # Password Auth Schemas
 # ============================================================================
+
 
 class RegisterRequest(BaseModel):
     """Schema for registering with email/password."""
@@ -228,6 +233,7 @@ class LoginResponse(BaseModel):
 # ============================================================================
 # TOTP Schemas
 # ============================================================================
+
 
 class SetPasswordRequest(BaseModel):
     """Schema for setting or changing password."""

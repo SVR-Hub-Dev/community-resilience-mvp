@@ -5,7 +5,7 @@ import io
 import secrets
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, cast
 
 import jwt
 import pyotp
@@ -124,14 +124,18 @@ class AuthService:
             return None
 
         # Check expiration
-        if api_key_record.expires_at and api_key_record.expires_at < datetime.now(
-            timezone.utc
-        ):
-            logger.debug(f"API key expired: {api_key_record.key_prefix}")
-            return None
+        # Normalize expires_at to a runtime datetime for safe comparison and to satisfy type checkers
+        expires_at = api_key_record.expires_at
+        if expires_at is not None:
+            if isinstance(expires_at, datetime):
+                # explicit cast to satisfy static type checkers that may otherwise treat this as a ColumnElement
+                expires_at_dt = cast(datetime, expires_at)
+                if expires_at_dt < datetime.now(timezone.utc):
+                    logger.debug(f"API key expired: {api_key_record.key_prefix}")
+                    return None
 
         # Update last_used_at
-        api_key_record.last_used_at = datetime.now(timezone.utc)
+        setattr(api_key_record, "last_used_at", datetime.now(timezone.utc))
         db.commit()
 
         # Get the user
@@ -166,7 +170,9 @@ class AuthService:
             tuple: (access_token, refresh_token)
         """
         # Create tokens
-        access_token = self.create_access_token(user.id, user.role)
+        access_token = self.create_access_token(
+            cast(int, user.id), cast(str, user.role)
+        )
         refresh_token = self.create_refresh_token()
 
         # Store session
@@ -219,7 +225,9 @@ class AuthService:
             return None
 
         # Create new access token
-        access_token = self.create_access_token(user.id, user.role)
+        access_token = self.create_access_token(
+            cast(int, user.id), cast(str, user.role)
+        )
 
         logger.info(f"Access token refreshed for user {user.email}")
         return access_token, user
@@ -323,9 +331,12 @@ class AuthService:
         user = (
             db.query(User).filter(User.email == email, User.is_active == True).first()
         )
-        if not user or not user.password_hash:
+        if user is None:
             return None
-        if not self.verify_password(password, user.password_hash):
+        password_hash = getattr(user, "password_hash", None)
+        if not password_hash:
+            return None
+        if not self.verify_password(password, password_hash):
             return None
         return user
 
@@ -375,71 +386,7 @@ class AuthService:
         except jwt.InvalidTokenError:
             return None
 
-    # ========================================================================
-    # User Operations
-    # ========================================================================
-
-    def get_or_create_oauth_user(
-        self,
-        db: Session,
-        email: str,
-        name: str,
-        oauth_provider: str,
-        oauth_id: str,
-        avatar_url: Optional[str] = None,
-    ) -> User:
-        """
-        Get existing user by OAuth ID or create a new one.
-
-        If user exists with same email but different OAuth, link them.
-        """
-        # Try to find by OAuth credentials first
-        user = (
-            db.query(User)
-            .filter(
-                User.oauth_provider == oauth_provider,
-                User.oauth_id == oauth_id,
-            )
-            .first()
-        )
-
-        if user:
-            # Update user info if changed
-            if user.name != name or user.avatar_url != avatar_url:
-                user.name = name
-                user.avatar_url = avatar_url
-                db.commit()
-            logger.info(f"OAuth login: existing user {user.email}")
-            return user
-
-        # Try to find by email (linking accounts)
-        user = db.query(User).filter(User.email == email).first()
-        if user:
-            # Link OAuth to existing account, preserving existing role and settings
-            user.oauth_provider = oauth_provider
-            user.oauth_id = oauth_id
-            user.avatar_url = avatar_url or user.avatar_url
-            # Note: We preserve the existing role and other user settings
-            # Don't overwrite role, password_hash, totp_enabled, etc.
-            db.commit()
-            logger.info(
-                f"OAuth linked to existing user {user.email}, preserving role: {user.role}"
-            )
-            return user
-
-        # Create new user
-        user = User(
-            email=email,
-            name=name,
-            oauth_provider=oauth_provider,
-            oauth_id=oauth_id,
-            avatar_url=avatar_url,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        logger.info(f"New OAuth user created: {user.email}")
-        return user
+    # Legacy OAuth user creation and linking logic removed as part of migration to JWT-only authentication (see docs/auth-migration-log.md)
 
 
 # Singleton instance

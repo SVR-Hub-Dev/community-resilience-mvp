@@ -19,5 +19,9 @@
     "typescript": "^5.0.0",
     "vite": "^5.0.0"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "better-auth": "^1.4.18",
+    "jose": "^6.1.3"
+  }
 }

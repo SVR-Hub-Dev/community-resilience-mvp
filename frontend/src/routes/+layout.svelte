@@ -1,32 +1,25 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import '../app.css';
-	import { initAuth, getAuthState, clearAuth, getRefreshToken } from '$lib/auth.svelte';
-	import { api } from '$lib/api';
+	import { getAuthHelpers } from '$lib/auth.svelte';
 	import { initTheme } from '$lib/theme';
 
 	let { children } = $props();
 
-	const auth = getAuthState();
+	// Get user from server-provided page data (set by +layout.server.ts)
+	// This is reactive and updates when page data changes
+	let auth = $derived(getAuthHelpers($page.data.user));
 	let showUserMenu = $state(false);
 
 	onMount(() => {
-		initAuth();
 		initTheme(); // Initialize theme on mount
 	});
 
-	async function handleLogout() {
-		const refreshToken = getRefreshToken();
-		if (refreshToken) {
-			try {
-				await api.auth.logout(refreshToken);
-			} catch {
-				// Ignore errors, clear auth anyway
-			}
-		}
-		clearAuth();
+	function handleLogout() {
+		// Navigate to the logout endpoint which handles session cleanup server-side
 		showUserMenu = false;
-		window.location.href = '/auth/login';
+		window.location.href = '/logout';
 	}
 
 	function toggleUserMenu() {
@@ -69,10 +62,10 @@
 								<img src={auth.user.avatar_url} alt="" class="user-avatar" />
 							{:else}
 								<span class="user-avatar-placeholder">
-									{auth.user.name.charAt(0).toUpperCase()}
+									{(auth.user.name || auth.user.email).charAt(0).toUpperCase()}
 								</span>
 							{/if}
-							<span class="user-name">{auth.user.name}</span>
+							<span class="user-name">{auth.user.name || auth.user.email}</span>
 							<svg class="dropdown-icon" viewBox="0 0 20 20" width="16" height="16">
 								<path
 									fill="currentColor"
@@ -149,7 +142,7 @@
 							</div>
 						{/if}
 					</div>
-				{:else if auth.isInitialized}
+				{:else}
 					<a href="/auth/login" class="sign-in-button">Sign In</a>
 				{/if}
 			</nav>

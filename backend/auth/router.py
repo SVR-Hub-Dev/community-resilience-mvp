@@ -1,787 +1,514 @@
 """Authentication API router with OAuth, token, and user management endpoints."""
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, cast
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
-from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Request, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session as DBSession
 
-from config import settings
+from config import Settings
 from db import get_db
-from auth.models import User, APIKey, Session as UserSession, UserRole
-from auth.schemas import (
-    UserOut,
-    UserUpdate,
-    UserAdminUpdate,
-    UserListOut,
-    TokenPair,
-    TokenRefresh,
-    OAuthRedirect,
-    APIKeyCreate,
-    APIKeyOut,
-    APIKeyCreated,
-    APIKeyListOut,
-    SessionOut,
-    SessionListOut,
-    AuthResponse,
-    MessageResponse,
-    RegisterRequest,
-    LoginRequest,
-    LoginResponse,
-    TOTPSetupResponse,
-    TOTPVerifyRequest,
-    TOTPLoginRequest,
-    SetPasswordRequest,
-)
+from auth.models import User, Session as SessionModel
 from auth.service import auth_service
-from auth.oauth import get_oauth_provider
-from auth.dependencies import get_current_user, require_admin
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("community_resilience.auth.router")
+router = APIRouter(prefix="/internal/auth", tags=["internal.auth"])
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-# Store OAuth states temporarily (in production, use Redis or database)
-_oauth_states: dict[str, datetime] = {}
+settings = Settings()
 
 
-def _cleanup_old_states():
-    """Remove OAuth states older than 10 minutes."""
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-    expired = [k for k, v in _oauth_states.items() if v < cutoff]
-    for k in expired:
-        del _oauth_states[k]
-
-
-# ============================================================================
-# OAuth Endpoints
-# ============================================================================
-
-
-@router.get("/login/{provider}")
-async def oauth_login(provider: str):
-    """
-    Redirect to OAuth authorization URL for the specified provider.
-
-    Supported providers: google, github
-    """
-    oauth_provider = get_oauth_provider(provider)
-    if not oauth_provider:
+def _require_internal_secret(request: Request):
+    if not settings.internal_auth_secret:
+        logger.warning("internal.secret.not_set")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported OAuth provider: {provider}",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Internal auth not configured",
+        )
+    secret = request.headers.get("x-internal-secret") or request.headers.get(
+        "X-Internal-Secret"
+    )
+    if not secret or secret != settings.internal_auth_secret:
+        logger.warning(
+            "internal.auth.unauthorized",
+            extra={"remote": getattr(request.client, "host", None)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
         )
 
-    # Generate and store state for CSRF protection
-    state = oauth_provider.generate_state()
-    _oauth_states[state] = datetime.now(timezone.utc)
-    _cleanup_old_states()
 
-    authorization_url = oauth_provider.get_authorization_url(state)
-
-    return RedirectResponse(url=authorization_url, status_code=status.HTTP_302_FOUND)
+class SessionValidateIn(BaseModel):
+    session_id: str
 
 
-@router.get("/callback/{provider}")
-async def oauth_callback(
-    provider: str,
-    code: str,
-    state: str,
+class SessionCreateIn(BaseModel):
+    user_id: int
+    ttl_seconds: Optional[int] = 60 * 60 * 24  # default 24h
+
+
+class UserOut(BaseModel):
+    id: int
+    email: Optional[str] = None
+    role: Optional[str] = None
+
+
+@router.post("/session/validate", response_model=UserOut)
+def internal_validate_session(
+    payload: SessionValidateIn,
     request: Request,
-    db: Session = Depends(get_db),
+    _=Depends(_require_internal_secret),
+    db: DBSession = Depends(get_db),
 ):
     """
-    Handle OAuth callback from provider.
-
-    Exchanges code for tokens, creates/updates user, and redirects to frontend.
+    Validate a session_id and return minimal user info.
+    Used by SvelteKit hooks.server.ts to resolve session -> user.
     """
-    logger.info(
-        f"OAuth callback received: provider={provider}, state={state}, code exists={bool(code)}"
+    session_id = payload.session_id
+    logger.debug(
+        "internal.session.validate.attempt", extra={"session_id_mask": session_id[:16]}
     )
 
-    # Verify state
-    if state not in _oauth_states:
-        logger.error(
-            f"Invalid OAuth state: {state}. Current states: {list(_oauth_states.keys())}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired OAuth state",
-        )
-    del _oauth_states[state]
-
-    # Get provider
-    oauth_provider = get_oauth_provider(provider)
-    if not oauth_provider:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported OAuth provider: {provider}",
-        )
-
-    # Exchange code for token
-    access_token = await oauth_provider.exchange_code(code)
-    if not access_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to exchange authorization code",
-        )
-
-    # Get user info
-    user_info = await oauth_provider.get_user_info(access_token)
-    if not user_info:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to get user info from provider",
-        )
-
-    # Create or update user
-    user = auth_service.get_or_create_oauth_user(
-        db=db,
-        email=user_info.email,
-        name=user_info.name,
-        oauth_provider=user_info.provider,
-        oauth_id=user_info.id,
-        avatar_url=user_info.avatar_url,
+    # Try lookup by primary key/id
+    session = (
+        db.query(SessionModel).filter(getattr(SessionModel, "id") == session_id).first()
     )
+    # Fallback: lookup by token field if present
+    if not session and hasattr(SessionModel, "session_token"):
+        session = (
+            db.query(SessionModel)
+            .filter(getattr(SessionModel, "session_token") == session_id)
+            .first()
+        )
 
-    if not user.is_active:
+    if not session:
+        logger.info(
+            "internal.session.validate.not_found",
+            extra={"session_id_mask": session_id[:16]},
+        )
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is disabled",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session"
         )
 
-    # Create session
-    user_agent = request.headers.get("user-agent")
-    ip_address = request.client.host if request.client else None
-    jwt_token, refresh_token = auth_service.create_user_session(
-        db=db,
-        user=user,
-        user_agent=user_agent,
-        ip_address=ip_address,
-    )
-
-    # Redirect to frontend with tokens
-    redirect_url = (
-        f"{settings.frontend_url}/auth/callback"
-        f"?access_token={jwt_token}"
-        f"&refresh_token={refresh_token}"
-        f"&expires_in={settings.jwt_access_token_expire_minutes * 60}"
-    )
-
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
-
-
-# ============================================================================
-# Password Auth Endpoints
-# ============================================================================
-
-
-@router.post(
-    "/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED
-)
-async def register(
-    payload: RegisterRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    """Register a new account with email and password."""
-    if len(payload.password) < 8:
+    # Optional: check is_active / expires_at if those fields exist
+    if getattr(session, "is_active", True) is False:
+        logger.info(
+            "internal.session.validate.inactive",
+            extra={"session_id_mask": session_id[:16]},
+        )
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Session inactive"
         )
 
-    try:
-        user = auth_service.register_user(
-            db=db,
-            email=payload.email,
-            password=payload.password,
-            name=payload.name,
+    expires_at = getattr(session, "expires_at", None)
+    if expires_at and isinstance(expires_at, datetime):
+        # Handle both timezone-aware and timezone-naive datetimes
+        now = datetime.now(timezone.utc)
+        if expires_at.tzinfo is None:
+            # expires_at is naive, convert now to naive for comparison
+            now = now.replace(tzinfo=None)
+        if expires_at < now:
+            logger.info(
+                "internal.session.validate.expired",
+                extra={"session_id_mask": session_id[:16]},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired"
+            )
+
+    # Resolve user
+    user = None
+    if hasattr(session, "user_id"):
+        user = (
+            db.query(User)
+            .filter(User.id == session.user_id, User.is_active == True)
+            .first()
         )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        )
+    elif hasattr(session, "user"):
+        # relationship
+        user = session.user if getattr(session.user, "is_active", True) else None
 
-    # Create session
-    user_agent = request.headers.get("user-agent")
-    ip_address = request.client.host if request.client else None
-    access_token, refresh_token = auth_service.create_user_session(
-        db=db,
-        user=user,
-        user_agent=user_agent,
-        ip_address=ip_address,
-    )
-
-    return AuthResponse(
-        user=UserOut.from_user(user),
-        tokens=TokenPair(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_in=settings.jwt_access_token_expire_minutes * 60,
-        ),
-    )
-
-
-@router.post("/login", response_model=LoginResponse)
-async def login(
-    payload: LoginRequest,
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db),
-):
-    """Login with email and password. Returns tokens or a TOTP challenge."""
-    user = auth_service.authenticate_user(db, payload.email, payload.password)
     if not user:
+        logger.info(
+            "internal.session.validate.user_not_found",
+            extra={"session_id_mask": session_id[:16]},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="User not found or inactive",
         )
 
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is disabled",
-        )
-
-    # If TOTP is enabled, return a challenge instead of tokens
-    if user.totp_enabled and user.totp_secret:
-        totp_token = auth_service.create_totp_pending_token(user.id)
-        return LoginResponse(totp_required=True, totp_token=totp_token)
-
-    # No TOTP - create session directly
-    user_agent = request.headers.get("user-agent")
-    ip_address = request.client.host if request.client else None
-    access_token, refresh_token = auth_service.create_user_session(
-        db=db,
-        user=user,
-        user_agent=user_agent,
-        ip_address=ip_address,
-    )
-
-    # Set access token as HTTP-only cookie
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
-        max_age=settings.jwt_access_token_expire_minutes * 60,
-        path="/",
-    )
-    return LoginResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=settings.jwt_access_token_expire_minutes * 60,
+    logger.info("internal.session.validate.success", extra={"user_id": user.id})
+    return UserOut(
+        id=cast(int, user.id),
+        email=getattr(user, "email", None),
+        role=getattr(user, "role", None),
     )
 
 
-@router.post("/login/totp", response_model=LoginResponse)
-async def login_totp(
-    payload: TOTPLoginRequest,
+@router.post("/session/create")
+def internal_create_session(
+    payload: SessionCreateIn,
     request: Request,
-    response: Response,
-    db: Session = Depends(get_db),
+    _=Depends(_require_internal_secret),
+    db: DBSession = Depends(get_db),
 ):
-    """Complete login by verifying a TOTP code after password authentication."""
-    user_id = auth_service.verify_totp_pending_token(payload.totp_token)
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired TOTP token",
-        )
+    """
+    Create a session record for a given user_id and return the created session identifier.
+    Intended for SvelteKit to call when it is the session authority.
+    """
+    user_id = payload.user_id
+    ttl = payload.ttl_seconds or (60 * 60 * 24)
+    logger.info(
+        "internal.session.create.attempt",
+        extra={"user_id": user_id, "remote": getattr(request.client, "host", None)},
+    )
 
     user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
-    if not user or not user.totp_secret:
+    if not user:
+        logger.warning(
+            "internal.session.create.user_not_found", extra={"user_id": user_id}
+        )
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid TOTP session",
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found or inactive"
         )
 
-    if not auth_service.verify_totp_code(user.totp_secret, payload.code):
+    token = uuid.uuid4().hex
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
+
+    # Construct SessionModel instance with best-effort fields
+    session_kwargs = {}
+    if hasattr(SessionModel, "user_id"):
+        session_kwargs["user_id"] = user_id
+    if hasattr(SessionModel, "session_token"):
+        session_kwargs["session_token"] = token
+    if hasattr(SessionModel, "expires_at"):
+        session_kwargs["expires_at"] = expires_at
+    if hasattr(SessionModel, "is_active"):
+        session_kwargs["is_active"] = True
+    if hasattr(SessionModel, "created_at"):
+        session_kwargs["created_at"] = datetime.now(timezone.utc)
+
+    session = SessionModel(**session_kwargs)
+    try:
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        session_identifier = (
+            getattr(session, "id", None)
+            or getattr(session, "session_token", None)
+            or token
+        )
+        logger.info(
+            "internal.session.create.success",
+            extra={
+                "user_id": user_id,
+                "session_identifier_mask": str(session_identifier)[:16],
+            },
+        )
+        return {"session_id": session_identifier}
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "internal.session.create.failed",
+            extra={"error": str(e), "user_id": user_id},
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid TOTP code",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create session: {str(e)}",
         )
 
-    # TOTP verified - create session
-    user_agent = request.headers.get("user-agent")
-    ip_address = request.client.host if request.client else None
-    access_token, refresh_token = auth_service.create_user_session(
-        db=db,
-        user=user,
-        user_agent=user_agent,
-        ip_address=ip_address,
-    )
 
-    # Set access token as HTTP-only cookie
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
-        max_age=settings.jwt_access_token_expire_minutes * 60,
-        path="/",
-    )
-    return LoginResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=settings.jwt_access_token_expire_minutes * 60,
-    )
+# =============================================================================
+# Password & TOTP Verification Endpoints
+# =============================================================================
 
 
-# ============================================================================
-# Password Management Endpoints
-# ============================================================================
+class PasswordVerifyIn(BaseModel):
+    email: str
+    password: str
 
 
-@router.put("/password", response_model=MessageResponse)
-async def set_password(
-    payload: SetPasswordRequest,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+class PasswordVerifyOut(BaseModel):
+    success: bool
+    user_id: Optional[int] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    totp_required: bool = False
+    totp_token: Optional[str] = None
+
+
+@router.post("/verify-password", response_model=PasswordVerifyOut)
+def internal_verify_password(
+    payload: PasswordVerifyIn,
+    request: Request,
+    _=Depends(_require_internal_secret),
+    db: DBSession = Depends(get_db),
 ):
-    """Set or change the user's password. OAuth users can use this to add a password for offline login."""
-    if len(payload.new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters",
+    """
+    Verify email/password credentials.
+    Returns user info if valid, or TOTP challenge if 2FA is enabled.
+    """
+    logger.debug(
+        "internal.verify_password.attempt",
+        extra={"email": payload.email, "remote": getattr(request.client, "host", None)},
+    )
+
+    user = auth_service.authenticate_user(db, payload.email, payload.password)
+    if not user:
+        logger.info("internal.verify_password.failed", extra={"email": payload.email})
+        return PasswordVerifyOut(success=False)
+
+    # Check if TOTP is enabled
+    if getattr(user, "totp_enabled", False):
+        totp_token = auth_service.create_totp_pending_token(cast(int, user.id))
+        logger.info(
+            "internal.verify_password.totp_required", extra={"user_id": user.id}
+        )
+        return PasswordVerifyOut(
+            success=True,
+            totp_required=True,
+            totp_token=totp_token,
         )
 
-    # If user already has a password, require the current one
-    if user.password_hash:
-        if not payload.current_password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Current password is required",
-            )
-        if not auth_service.verify_password(
-            payload.current_password, user.password_hash
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Current password is incorrect",
-            )
+    logger.info("internal.verify_password.success", extra={"user_id": user.id})
+    return PasswordVerifyOut(
+        success=True,
+        user_id=cast(int, user.id),
+        email=getattr(user, "email", None),
+        role=getattr(user, "role", None),
+    )
 
-    user.password_hash = auth_service.hash_password(payload.new_password)
+
+class TotpVerifyIn(BaseModel):
+    totp_token: str
+    code: str
+
+
+@router.post("/verify-totp", response_model=PasswordVerifyOut)
+def internal_verify_totp(
+    payload: TotpVerifyIn,
+    request: Request,
+    _=Depends(_require_internal_secret),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Verify TOTP code after password verification.
+    Returns user info if valid.
+    """
+    logger.debug(
+        "internal.verify_totp.attempt",
+        extra={"remote": getattr(request.client, "host", None)},
+    )
+
+    # Verify the pending token
+    user_id = auth_service.verify_totp_pending_token(payload.totp_token)
+    if not user_id:
+        logger.info("internal.verify_totp.invalid_token")
+        return PasswordVerifyOut(success=False)
+
+    # Get user and verify TOTP code
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    if not user:
+        logger.info("internal.verify_totp.user_not_found", extra={"user_id": user_id})
+        return PasswordVerifyOut(success=False)
+
+    totp_secret = getattr(user, "totp_secret", None)
+    if not totp_secret:
+        logger.info("internal.verify_totp.no_secret", extra={"user_id": user_id})
+        return PasswordVerifyOut(success=False)
+
+    if not auth_service.verify_totp_code(totp_secret, payload.code):
+        logger.info("internal.verify_totp.invalid_code", extra={"user_id": user_id})
+        return PasswordVerifyOut(success=False)
+
+    logger.info("internal.verify_totp.success", extra={"user_id": user_id})
+    return PasswordVerifyOut(
+        success=True,
+        user_id=cast(int, user.id),
+        email=getattr(user, "email", None),
+        role=getattr(user, "role", None),
+    )
+
+
+class SessionDeleteIn(BaseModel):
+    session_id: str
+
+
+@router.post("/session/delete")
+def internal_delete_session(
+    payload: SessionDeleteIn,
+    request: Request,
+    _=Depends(_require_internal_secret),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Delete a session by session_id.
+    Used for logout.
+    """
+    session_id = payload.session_id
+    logger.debug(
+        "internal.session.delete.attempt",
+        extra={
+            "session_id_mask": session_id[:16] if len(session_id) >= 16 else session_id
+        },
+    )
+
+    # Try to find and delete by session_token
+    deleted = 0
+    if hasattr(SessionModel, "session_token"):
+        deleted = (
+            db.query(SessionModel)
+            .filter(getattr(SessionModel, "session_token") == session_id)
+            .delete()
+        )
+
+    # Fallback: try by id
+    if deleted == 0:
+        try:
+            deleted = (
+                db.query(SessionModel)
+                .filter(getattr(SessionModel, "id") == session_id)
+                .delete()
+            )
+        except Exception:
+            pass  # id might not be string-compatible
+
     db.commit()
+
+    if deleted > 0:
+        logger.info(
+            "internal.session.delete.success",
+            extra={
+                "session_id_mask": (
+                    session_id[:16] if len(session_id) >= 16 else session_id
+                )
+            },
+        )
+        return {"deleted": True}
 
     logger.info(
-        f"Password {'changed' if payload.current_password else 'set'} for user {user.email}"
+        "internal.session.delete.not_found",
+        extra={
+            "session_id_mask": session_id[:16] if len(session_id) >= 16 else session_id
+        },
     )
-    return MessageResponse(message="Password has been set successfully")
+    return {"deleted": False}
 
 
-# ============================================================================
-# TOTP Management Endpoints
-# ============================================================================
+# =============================================================================
+# OAuth User Management
+# =============================================================================
 
 
-@router.post("/totp/setup", response_model=TOTPSetupResponse)
-async def setup_totp(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+class OAuthUserIn(BaseModel):
+    provider: str  # 'google', 'github', 'microsoft'
+    provider_id: str
+    email: str
+    name: str
+    avatar_url: Optional[str] = None
+
+
+class OAuthUserOut(BaseModel):
+    user_id: int
+    email: str
+    role: str
+    created: bool  # True if new user was created
+
+
+@router.post("/oauth/find-or-create", response_model=OAuthUserOut)
+def internal_oauth_find_or_create(
+    payload: OAuthUserIn,
+    request: Request,
+    _=Depends(_require_internal_secret),
+    db: DBSession = Depends(get_db),
 ):
     """
-    Generate a TOTP secret and QR code for the authenticated user.
-
-    Call /totp/verify-setup with a valid code to activate TOTP.
+    Find or create a user from OAuth identity.
+    1. Find by (provider, provider_id)
+    2. If not found, find by email and link OAuth identity
+    3. If not found, create new user
     """
-    if user.totp_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="TOTP is already enabled",
-        )
-
-    # Generate secret and store it (not yet enabled)
-    secret = auth_service.generate_totp_secret()
-    user.totp_secret = secret
-    db.commit()
-
-    provisioning_uri = auth_service.get_totp_provisioning_uri(secret, user.email)
-    qr_svg = auth_service.generate_totp_qr_svg(provisioning_uri)
-
-    return TOTPSetupResponse(
-        secret=secret,
-        provisioning_uri=provisioning_uri,
-        qr_svg=qr_svg,
+    logger.info(
+        "internal.oauth.find_or_create.attempt",
+        extra={
+            "provider": payload.provider,
+            "email": payload.email,
+            "remote": getattr(request.client, "host", None),
+        },
     )
 
-
-@router.post("/totp/verify-setup", response_model=MessageResponse)
-async def verify_totp_setup(
-    payload: TOTPVerifyRequest,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Verify a TOTP code to activate TOTP on the account."""
-    if user.totp_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="TOTP is already enabled",
-        )
-
-    if not user.totp_secret:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Call /totp/setup first",
-        )
-
-    if not auth_service.verify_totp_code(user.totp_secret, payload.code):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid code. Please try again.",
-        )
-
-    user.totp_enabled = True
-    db.commit()
-
-    logger.info(f"TOTP enabled for user {user.email}")
-    return MessageResponse(message="TOTP has been enabled")
-
-
-@router.delete("/totp", response_model=MessageResponse)
-async def disable_totp(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Disable TOTP for the authenticated user."""
-    if not user.totp_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="TOTP is not enabled",
-        )
-
-    user.totp_secret = None
-    user.totp_enabled = False
-    db.commit()
-
-    logger.info(f"TOTP disabled for user {user.email}")
-    return MessageResponse(message="TOTP has been disabled")
-
-
-# ============================================================================
-# Token Endpoints
-# ============================================================================
-
-
-@router.post("/refresh", response_model=TokenPair)
-async def refresh_token(
-    payload: TokenRefresh,
-    db: Session = Depends(get_db),
-):
-    """Refresh an access token using a refresh token."""
-    result = auth_service.refresh_access_token(db, payload.refresh_token)
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token",
-        )
-
-    access_token, user = result
-
-    return TokenPair(
-        access_token=access_token,
-        refresh_token=payload.refresh_token,  # Keep same refresh token
-        expires_in=settings.jwt_access_token_expire_minutes * 60,
-    )
-
-
-@router.post("/logout", response_model=MessageResponse)
-async def logout(
-    payload: TokenRefresh,
-    response: Response,
-    db: Session = Depends(get_db),
-):
-    """Logout by invalidating the refresh token and clearing the cookie."""
-    auth_service.logout(db, payload.refresh_token)
-    response.delete_cookie("access_token", path="/")
-    return MessageResponse(message="Logged out successfully")
-
-
-@router.post("/logout-all", response_model=MessageResponse)
-async def logout_all(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Logout all sessions for the current user."""
-    count = auth_service.logout_all(db, user.id)
-    return MessageResponse(message=f"Logged out from {count} sessions")
-
-
-# ============================================================================
-# Current User Endpoints
-# ============================================================================
-
-
-@router.get("/me", response_model=UserOut)
-async def get_me(user: User = Depends(get_current_user)):
-    """Get current authenticated user."""
-    return UserOut.from_user(user)
-
-
-@router.put("/me", response_model=UserOut)
-async def update_me(
-    payload: UserUpdate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Update the current user's profile."""
-    if payload.name is not None:
-        user.name = payload.name
-    if payload.avatar_url is not None:
-        user.avatar_url = payload.avatar_url
-
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-@router.get("/me/sessions", response_model=SessionListOut)
-async def list_my_sessions(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """List all active sessions for the current user."""
-    sessions = (
-        db.query(UserSession)
+    # 1. Try to find by OAuth identity
+    user = (
+        db.query(User)
         .filter(
-            UserSession.user_id == user.id,
-            UserSession.expires_at > datetime.now(timezone.utc),
+            User.oauth_provider == payload.provider,
+            User.oauth_id == payload.provider_id,
+            User.is_active == True,
         )
-        .order_by(UserSession.created_at.desc())
-        .all()
+        .first()
     )
-    return SessionListOut(sessions=sessions, total=len(sessions))
 
-
-# ============================================================================
-# API Key Endpoints
-# ============================================================================
-
-
-@router.get("/api-keys", response_model=APIKeyListOut)
-async def list_api_keys(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """List all API keys for the current user."""
-    keys = (
-        db.query(APIKey)
-        .filter(APIKey.user_id == user.id)
-        .order_by(APIKey.created_at.desc())
-        .all()
-    )
-    return APIKeyListOut(api_keys=keys, total=len(keys))
-
-
-@router.post(
-    "/api-keys", response_model=APIKeyCreated, status_code=status.HTTP_201_CREATED
-)
-async def create_api_key(
-    payload: APIKeyCreate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Create a new API key.
-
-    The full key is only returned once. Store it securely.
-    """
-    # Generate key
-    full_key, key_hash, key_prefix = auth_service.generate_api_key()
-
-    # Calculate expiration
-    expires_at = None
-    if payload.expires_in_days:
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            days=payload.expires_in_days
+    if user:
+        logger.info(
+            "internal.oauth.find_or_create.found_by_oauth",
+            extra={"user_id": user.id, "provider": payload.provider},
+        )
+        return OAuthUserOut(
+            user_id=cast(int, user.id),
+            email=cast(str, user.email),
+            role=cast(str, user.role),
+            created=False,
         )
 
-    # Create record
-    api_key = APIKey(
-        user_id=user.id,
-        key_hash=key_hash,
-        key_prefix=key_prefix,
+    # 2. Try to find by email and link OAuth
+    user = (
+        db.query(User)
+        .filter(User.email == payload.email, User.is_active == True)
+        .first()
+    )
+
+    if user:
+        # Link OAuth identity to existing user
+        setattr(user, "oauth_provider", payload.provider)
+        setattr(user, "oauth_id", payload.provider_id)
+        if payload.avatar_url and not getattr(user, "avatar_url", None):
+            setattr(user, "avatar_url", payload.avatar_url)
+        db.commit()
+        logger.info(
+            "internal.oauth.find_or_create.linked",
+            extra={"user_id": user.id, "provider": payload.provider},
+        )
+        return OAuthUserOut(
+            user_id=cast(int, user.id),
+            email=cast(str, user.email),
+            role=cast(str, user.role),
+            created=False,
+        )
+
+    # 3. Create new user
+    user = User(
+        email=payload.email,
         name=payload.name,
-        description=payload.description,
-        scopes=payload.scopes,
-        expires_at=expires_at,
+        oauth_provider=payload.provider,
+        oauth_id=payload.provider_id,
+        avatar_url=payload.avatar_url,
+        is_active=True,
     )
-    db.add(api_key)
-    db.commit()
-    db.refresh(api_key)
-
-    logger.info(f"API key created: {key_prefix} for user {user.email}")
-
-    # Return with the full key (only time it's shown)
-    return APIKeyCreated(
-        id=api_key.id,
-        name=api_key.name,
-        description=api_key.description,
-        key_prefix=api_key.key_prefix,
-        scopes=api_key.scopes,
-        last_used_at=api_key.last_used_at,
-        expires_at=api_key.expires_at,
-        is_active=api_key.is_active,
-        created_at=api_key.created_at,
-        key=full_key,
-    )
-
-
-@router.delete("/api-keys/{key_id}", response_model=MessageResponse)
-async def revoke_api_key(
-    key_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Revoke (delete) an API key."""
-    api_key = (
-        db.query(APIKey).filter(APIKey.id == key_id, APIKey.user_id == user.id).first()
-    )
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="API key not found",
-        )
-
-    db.delete(api_key)
-    db.commit()
-
-    logger.info(f"API key revoked: {api_key.key_prefix} for user {user.email}")
-    return MessageResponse(message="API key revoked")
-
-
-# ============================================================================
-# Admin Endpoints - User Management
-# ============================================================================
-
-
-@router.get("/users", response_model=UserListOut)
-async def list_users(
-    skip: int = 0,
-    limit: int = 50,
-    is_active: Optional[bool] = None,
-    role: Optional[str] = None,
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """List all users (admin only)."""
-    query = db.query(User)
-
-    if is_active is not None:
-        query = query.filter(User.is_active == is_active)
-    if role:
-        query = query.filter(User.role == role)
-
-    total = query.count()
-    users = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
-
-    return UserListOut(users=[UserOut.from_user(user) for user in users], total=total)
-
-
-@router.get("/users/{user_id}", response_model=UserOut)
-async def get_user(
-    user_id: int,
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """Get a specific user (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-    return UserOut.from_user(user)
-
-
-@router.put("/users/{user_id}", response_model=UserOut)
-async def update_user(
-    user_id: int,
-    payload: UserAdminUpdate,
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """Update a user (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    # Prevent removing last admin
-    if (
-        payload.role
-        and payload.role != UserRole.ADMIN
-        and user.role == UserRole.ADMIN.value
-    ):
-        admin_count = (
-            db.query(User)
-            .filter(User.role == UserRole.ADMIN.value, User.is_active == True)
-            .count()
-        )
-        if admin_count <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot remove the last admin",
-            )
-
-    if payload.name is not None:
-        user.name = payload.name
-    if payload.role is not None:
-        user.role = payload.role.value
-    if payload.is_active is not None:
-        user.is_active = payload.is_active
-
+    db.add(user)
     db.commit()
     db.refresh(user)
 
-    logger.info(f"User updated by admin: {user.email}")
-    return UserOut.from_user(user)
-
-
-@router.delete("/users/{user_id}", response_model=MessageResponse)
-async def delete_user(
-    user_id: int,
-    admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """Delete a user (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    # Prevent self-deletion
-    if user.id == admin.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete yourself",
-        )
-
-    # Prevent deleting last admin
-    if user.role == UserRole.ADMIN.value:
-        admin_count = (
-            db.query(User)
-            .filter(User.role == UserRole.ADMIN.value, User.is_active == True)
-            .count()
-        )
-        if admin_count <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete the last admin",
-            )
-
-    db.delete(user)
-    db.commit()
-
-    logger.info(f"User deleted by admin: {user.email}")
-    return MessageResponse(message="User deleted")
+    logger.info(
+        "internal.oauth.find_or_create.created",
+        extra={"user_id": user.id, "provider": payload.provider},
+    )
+    return OAuthUserOut(
+        user_id=cast(int, user.id),
+        email=cast(str, user.email),
+        role=cast(str, user.role),
+        created=True,
+    )

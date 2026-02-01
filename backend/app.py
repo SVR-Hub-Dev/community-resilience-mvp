@@ -1,10 +1,12 @@
 """FastAPI application for Community Resilience Reasoning System."""
 
+import os
 import logging
-from typing import List, Optional
+
+from typing import List, Optional, cast
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Request, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -19,6 +21,12 @@ from models.models import (
     ModelFeedbackLog,
 )
 from auth.router import router as auth_router
+from auth.router import (
+    router as internal_auth_router,
+)  # added: internal auth endpoints for SvelteKit
+from auth.derived import (
+    verify_derived_token_raw,
+)  # added: verify derived JWTs minted by SvelteKit
 from api.kg_router import router as kg_router
 from api.documents import router as documents_router
 from api.sync import router as sync_router
@@ -28,6 +36,16 @@ from services.embeddings import embed_text
 from services.retrieval import retrieve_all_context, retrieve_relevant_knowledge
 from services.reasoning import run_reasoning_model
 from llm_client import llm
+
+# Configure module logger (keep existing app logger behavior)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logger = logging.getLogger("community_resilience")
+logger.setLevel(LOG_LEVEL)
+if not logger.handlers:
+    ch = logging.StreamHandler()
+    ch.setLevel(LOG_LEVEL)
+    ch.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    logger.addHandler(ch)
 
 # Configure logging
 logging.basicConfig(
@@ -168,6 +186,33 @@ app.include_router(kg_router)
 app.include_router(documents_router)
 app.include_router(sync_router)
 
+# include internal auth endpoints under /internal/auth
+app.include_router(internal_auth_router)
+
+
+# Helper dependency to verify derived JWTs minted by SvelteKit.
+# Endpoints can depend on this to accept internal derived tokens.
+async def verify_derived_token(request: Request):
+    auth = request.headers.get("authorization") or ""
+    if not auth.lower().startswith("bearer "):
+        logger.debug("derived_token.missing")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token"
+        )
+    token = auth.split(" ", 1)[1].strip()
+    try:
+        payload = verify_derived_token_raw(token)
+        # attach to request.state if callers want to inspect
+        request.state.derived_token = payload
+        return payload
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("derived_token.verify.error", extra={"error": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid derived token"
+        )
+
 
 # --- Health Check ---
 
@@ -281,13 +326,13 @@ def update_knowledge(
     if not entry:
         raise HTTPException(status_code=404, detail="Knowledge entry not found")
 
-    entry.title = item.title
-    entry.description = item.description
-    entry.tags = item.tags
-    entry.location = item.location
-    entry.hazard_type = item.hazard_type
-    entry.source = item.source
-    entry.embedding = embed_text(item.description)
+    setattr(entry, "title", item.title)
+    setattr(entry, "description", item.description)
+    setattr(entry, "tags", item.tags)
+    setattr(entry, "location", item.location)
+    setattr(entry, "hazard_type", item.hazard_type)
+    setattr(entry, "source", item.source)
+    setattr(entry, "embedding", embed_text(item.description))
 
     db.commit()
     return {"status": "ok", "id": entry.id}
@@ -340,7 +385,7 @@ async def query_reasoning(
     # Log the interaction
     log = ModelFeedbackLog(
         user_input=payload.text,
-        retrieved_knowledge_ids=[k.id for k in context.knowledge],
+        retrieved_knowledge_ids=[cast(int, k.id) for k in context.knowledge],
         retrieved_asset_ids=[a.id for a in context.assets],
         model_output=str(result),
     )
@@ -361,8 +406,8 @@ async def query_reasoning(
     return QueryOut(
         summary=result.get("summary", ""),
         actions=actions,
-        retrieved_knowledge_ids=[k.id for k in context.knowledge],
-        log_id=log.id,
+        retrieved_knowledge_ids=[cast(int, k.id) for k in context.knowledge],
+        log_id=cast(int, log.id),
         error=result.get("error"),
     )
 
@@ -384,8 +429,8 @@ def submit_feedback(
     if not log:
         raise HTTPException(status_code=404, detail="Log entry not found")
 
-    log.rating = payload.rating
-    log.comments = payload.comments
+    setattr(log, "rating", payload.rating)
+    setattr(log, "comments", payload.comments)
     db.commit()
 
     logger.info(f"Feedback recorded: log_id={payload.log_id}, rating={payload.rating}")

@@ -1,671 +1,401 @@
-# OAuth Implementation Plan
+# Authentication Architecture
 
 ## Overview
 
-Add OAuth 2.0 social login (Google, GitHub) as an alternative authentication method alongside existing API key authentication.
+This document describes the server-side authentication architecture implemented for the Community Resilience platform.
 
-## Prerequisites
+### Key Principles
 
-- Existing auth infrastructure in `auth/` directory
-- Database models already support OAuth (User table can link to OAuth providers)
-- FastAPI OAuth dependencies available
+1. **SvelteKit is the sole auth authority** - All authentication flows (login, OAuth, session management) are handled by SvelteKit
+2. **FastAPI is a resource server only** - It validates derived JWTs minted by SvelteKit but does not manage authentication
+3. **HTTP-only session cookies** - Browser sessions use secure HTTP-only cookies, never exposing tokens to JavaScript
+4. **API keys for CLI/automation** - API keys are restricted to non-browser routes for programmatic access
 
 ---
 
-## Phase 1: OAuth Provider Setup
+## Architecture Diagram
 
-### 1.1 Register OAuth Applications
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              Browser                                     │
+│  ┌─────────────────┐                           ┌──────────────────────┐ │
+│  │   Login Form    │──────────────────────────▶│  SvelteKit Server    │ │
+│  │   OAuth Button  │   Form POST / OAuth       │  (Auth Authority)    │ │
+│  └─────────────────┘                           └──────────┬───────────┘ │
+│                                                           │             │
+│                     HTTP-only session_id cookie           │             │
+│  ◀────────────────────────────────────────────────────────┘             │
+│                                                                         │
+│  ┌─────────────────┐   Derived JWT in           ┌──────────────────────┐│
+│  │  Page Request   │   Authorization header     │     FastAPI          ││
+│  │  (SSR/API)      │──────────────────────────▶│  (Resource Server)   ││
+│  └─────────────────┘   (minted by SvelteKit)    └──────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────┘
 
-#### Google OAuth
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           CLI / Automation                               │
+│  ┌─────────────────┐   API Key (cr_xxx)         ┌──────────────────────┐│
+│  │  API Request    │──────────────────────────▶│     FastAPI          ││
+│  │                 │                            │  (Resource Server)   ││
+│  └─────────────────┘                            └──────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Authentication Flows
+
+### Email/Password Login
+
+1. User submits login form to `/auth/login` (SvelteKit form action)
+2. SvelteKit calls FastAPI internal endpoint `/internal/auth/verify-password`
+3. If TOTP required, SvelteKit shows TOTP form
+4. On success, SvelteKit calls `/internal/auth/session/create`
+5. SvelteKit sets HTTP-only `session_id` cookie
+6. User is redirected to home page
+
+### OAuth Login (Google/GitHub)
+
+1. User clicks OAuth button, redirected to `/auth/[provider]`
+2. SvelteKit generates state, stores in cookie, redirects to provider
+3. Provider authenticates user, redirects to `/auth/[provider]/callback`
+4. SvelteKit:
+   - Verifies state matches cookie
+   - Exchanges code for access token (direct to provider)
+   - Fetches user info from provider
+   - Calls FastAPI `/internal/auth/oauth/find-or-create`
+   - Creates session, sets cookie
+5. User is redirected to home page
+
+### Session Validation
+
+1. Browser makes request to any SvelteKit page
+2. `hooks.server.ts` reads `session_id` cookie
+3. Calls FastAPI `/internal/auth/session/validate`
+4. Sets `event.locals.user` with validated user data
+5. Page loads with `$page.data.user` available
+
+### API Calls (Browser → FastAPI)
+
+1. SvelteKit server receives page/API request
+2. If `locals.user` exists, mints a short-lived derived JWT
+3. Derived JWT sent to FastAPI in `Authorization: Bearer` header
+4. FastAPI validates JWT signature and expiry
+5. FastAPI rejects requests using API keys on browser-facing routes
+
+### Logout
+
+1. User clicks logout, navigated to `/logout`
+2. SvelteKit reads `session_id` from cookie
+3. Calls FastAPI `/internal/auth/session/delete`
+4. Clears `session_id` cookie
+5. Redirects to login page
+
+---
+
+## File Structure
+
+### Backend (FastAPI)
+
+```text
+backend/auth/
+├── __init__.py           # Exports all auth components
+├── dependencies.py       # Auth dependencies for routes
+├── derived.py           # Derived JWT verification
+├── models.py            # User, Session, APIKey models
+├── router.py            # Auth endpoints
+├── schemas.py           # Request/response schemas
+└── service.py           # Auth business logic
+```
+
+### Frontend (SvelteKit)
+
+```text
+frontend/src/
+├── app.d.ts             # Type definitions (App.Locals)
+├── hooks.server.ts      # Session validation middleware
+├── lib/
+│   ├── auth.svelte.ts   # Auth helper utilities
+│   ├── server/
+│   │   └── backend.ts   # Internal API client
+│   └── types.ts         # Shared types
+└── routes/
+    ├── +layout.server.ts    # Provides user to all pages
+    ├── +layout.svelte       # Uses $page.data.user
+    ├── auth/
+    │   ├── login/
+    │   │   ├── +page.server.ts   # Login form actions
+    │   │   └── +page.svelte      # Login UI
+    │   ├── register/
+    │   │   ├── +page.server.ts   # Registration form action
+    │   │   └── +page.svelte      # Registration UI
+    │   └── [provider]/
+    │       ├── +server.ts        # OAuth initiation
+    │       └── callback/
+    │           └── +server.ts    # OAuth callback
+    └── logout/
+        └── +server.ts            # Logout handler
+```
+
+---
+
+## Backend Endpoints
+
+### Internal Endpoints (SvelteKit → FastAPI)
+
+These endpoints require `X-Internal-Secret` header matching `INTERNAL_AUTH_SECRET`.
+
+| Endpoint | Method | Purpose |
+| -------- | ------ | ------- |
+| `/internal/auth/verify-password` | POST | Validate email/password |
+| `/internal/auth/verify-totp` | POST | Validate TOTP code |
+| `/internal/auth/session/create` | POST | Create new session |
+| `/internal/auth/session/validate` | POST | Validate existing session |
+| `/internal/auth/session/delete` | POST | Delete session (logout) |
+| `/internal/auth/oauth/find-or-create` | POST | Find or create OAuth user |
+
+### Public Endpoints
+
+| Endpoint | Method | Purpose |
+| -------- | ------ | ------- |
+| `/auth/register` | POST | Register new user |
+| `/auth/me` | GET | Get current user info |
+
+---
+
+## Dependencies
+
+### Browser-Only Dependencies (No API Keys)
+
+These reject requests using API keys, only accepting derived JWTs from SvelteKit:
+
+```python
+from auth.dependencies import require_admin, require_editor, require_viewer
+
+@router.get("/protected")
+async def protected_route(user: User = Depends(require_viewer)):
+    return {"user": user.email}
+```
+
+### CLI/Automation Dependencies (API Keys Allowed)
+
+These accept both API keys and derived JWTs:
+
+```python
+from auth.dependencies import require_admin_or_api_key, require_editor_or_api_key, require_viewer_or_api_key
+
+@router.post("/api/documents")
+async def create_document(user: User = Depends(require_editor_or_api_key)):
+    return {"created_by": user.email}
+```
+
+---
+
+## Environment Variables
+
+### Backend (.env)
+
+```bash
+# Internal authentication secret (shared with frontend)
+INTERNAL_AUTH_SECRET=<generate-random-secret>
+
+# JWT configuration
+JWT_SECRET=<generate-random-secret>
+JWT_ALGORITHM=HS256
+
+# Database
+DATABASE_URL=postgresql://user:pass@localhost/db
+```
+
+### Frontend (.env)
+
+```bash
+# Backend URL
+API_URL=http://localhost:8000
+
+# Internal authentication secret (same as backend)
+INTERNAL_AUTH_SECRET=<same-as-backend>
+
+# OAuth providers (optional)
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+MICROSOFT_CLIENT_ID=...
+MICROSOFT_CLIENT_SECRET=...
+```
+
+---
+
+## Security Considerations
+
+### Session Cookie Security
+
+- `httpOnly: true` - Not accessible via JavaScript
+- `secure: true` (production) - Only sent over HTTPS
+- `sameSite: 'lax'` - CSRF protection
+- 7-day expiration with server-side session validation
+
+### Derived JWT Security
+
+- Short-lived (5 minute expiration)
+- Only minted by SvelteKit server, never exposed to browser
+- Signed with shared `INTERNAL_AUTH_SECRET`
+
+### API Key Isolation
+
+- API keys prefixed with `cr_` for identification
+- Browser-facing routes explicitly reject API keys
+- Only CLI/automation routes accept API keys
+
+### Internal Endpoint Security
+
+- Protected by `X-Internal-Secret` header
+- Only accessible from SvelteKit server
+- Should not be exposed to public internet in production
+
+---
+
+## OAuth Provider Setup
+
+### Google OAuth
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create new project or select existing
-3. Enable "Google+ API"
-4. Create OAuth 2.0 credentials
-5. Set authorized redirect URIs:
-   - Development: `http://localhost:8000/auth/callback/google`
-   - Production: `https://yourdomain.com/auth/callback/google`
-6. Note down Client ID and Client Secret
+2. Create OAuth 2.0 credentials
+3. Set authorized redirect URI:
+   a. `https://yourdomain.com/auth/google/callback` - (`https://your-app.vercel.app/auth/google/callback`)
+   b. `http://localhost:5173/auth/google/callback`
+4. Copy Client ID and Client Secret to environment variables
 
-#### GitHub OAuth
+### GitHub OAuth
+
+GitHub classic OAuth apps only support one callback URL per app. Create separate apps for development and production:
+
+**Dev App:**
 
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
-2. Create new OAuth App
-3. Set callback URL:
-   - Development: `http://localhost:8000/auth/callback/github`
-   - Production: `https://yourdomain.com/auth/callback/github`
-4. Note down Client ID and Client Secret
+2. Click "New OAuth App"
+3. Name: `your-app-dev`
+4. Homepage URL: `http://localhost:5173`
+5. Callback URL: `http://localhost:5173/auth/github/callback`
+6. Copy Client ID and Client Secret to your local `.env` file
 
-### 1.2 Update Environment Variables
+**Prod App:**
 
-````bash
-# ...existing code...
+1. Click "New OAuth App" again
+2. Name: `your-app`
+3. Homepage URL: `https://your-app.vercel.app`
+4. Callback URL: `https://your-app.vercel.app/auth/github/callback`
+5. Add Client ID and Client Secret to Vercel environment variables
 
-# OAuth Configuration
-OAUTH_GOOGLE_CLIENT_ID=your_google_client_id
-OAUTH_GOOGLE_CLIENT_SECRET=your_google_client_secret
-OAUTH_GITHUB_CLIENT_ID=your_github_client_id
-OAUTH_GITHUB_CLIENT_SECRET=your_github_client_secret
+Both apps use the same env var names (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`) - just different values per environment. The code automatically uses the correct credentials based on where it runs.
 
-# Session secret for JWT tokens
-SECRET_KEY=generate_random_secret_key_here
-JWT_ALGORITHM=HS256
-JWT_EXPIRATION_MINUTES=1440  # 24 hours
+### Microsoft OAuth
 
-# Frontend URL for redirects
-FRONTEND_URL=http://localhost:5173
+1. Go to [Azure Portal - App Registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
+2. Click "New registration"
+3. Enter app name and select supported account types:
+   - "Accounts in any organizational directory and personal Microsoft accounts" for broadest access
+   - "Accounts in this organizational directory only" for single-tenant
+4. Set redirect URI:
+   a. `https://yourdomain.com/auth/microsoft/callback`- (`https://your-app.vercel.app/auth/microsoft/callback`)
+   b. `http://localhost:5173/auth/microsoft/callback`
+5. After creation, go to "Certificates & secrets" → "New client secret"
+6. Copy Application (client) ID and the client secret value to environment variables
 
-# ...existing code...
-````
+**Note:** Microsoft uses different token/userinfo endpoints depending on tenant configuration:
 
----
-
-## Phase 2: Database Schema Updates
-
-### 2.1 Create Migration for OAuth Tables
-
-````python
-"""Add OAuth support tables
-
-Revision ID: 003
-Revises: 002
-Create Date: 2026-01-26
-"""
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
-revision = '003'
-down_revision = '002'
-branch_labels = None
-depends_on = None
-
-def upgrade():
-    # Add OAuth provider info to users table
-    op.add_column('users', sa.Column('oauth_provider', sa.String(50), nullable=True))
-    op.add_column('users', sa.Column('oauth_id', sa.String(255), nullable=True))
-    op.add_column('users', sa.Column('avatar_url', sa.String(512), nullable=True))
-    
-    # Create index for OAuth lookups
-    op.create_index('ix_users_oauth_provider_id', 'users', ['oauth_provider', 'oauth_id'])
-    
-    # Create sessions table for JWT tokens
-    op.create_table(
-        'user_sessions',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column('user_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
-        sa.Column('token_hash', sa.String(255), nullable=False, unique=True),
-        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('last_used_at', sa.DateTime(timezone=True)),
-        sa.Column('user_agent', sa.String(512)),
-        sa.Column('ip_address', sa.String(45))
-    )
-    
-    op.create_index('ix_user_sessions_user_id', 'user_sessions', ['user_id'])
-    op.create_index('ix_user_sessions_expires_at', 'user_sessions', ['expires_at'])
-
-def downgrade():
-    op.drop_table('user_sessions')
-    op.drop_column('users', 'oauth_provider')
-    op.drop_column('users', 'oauth_id')
-    op.drop_column('users', 'avatar_url')
-````
+- Multi-tenant: `https://login.microsoftonline.com/common/oauth2/v2.0/...`
+- Single-tenant: `https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/...`
 
 ---
 
-## Phase 3: Update Auth Models
+## Frontend Usage
 
-### 3.1 Enhance User Model
+### Accessing User Data
 
-````python
-# ...existing code...
-
-class User(Base):
-    __tablename__ = "users"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String, unique=True, index=True, nullable=False)
-    name = Column(String, nullable=False)
-    role = Column(String, default=UserRole.VIEWER.value, nullable=False)
-    
-    # OAuth fields
-    oauth_provider = Column(String(50), nullable=True)  # 'google', 'github', None
-    oauth_id = Column(String(255), nullable=True)  # Provider's user ID
-    avatar_url = Column(String(512), nullable=True)
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
-    # Relationships
-    api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
-    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
-
-class UserSession(Base):
-    __tablename__ = "user_sessions"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    token_hash = Column(String(255), nullable=False, unique=True)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_used_at = Column(DateTime(timezone=True))
-    user_agent = Column(String(512))
-    ip_address = Column(String(45))
-    
-    # Relationships
-    user = relationship("User", back_populates="sessions")
-
-# ...existing code...
-````
-
----
-
-## Phase 4: Implement OAuth Service
-
-### 4.1 Create OAuth Configuration
-
-````python
-from authlib.integrations.starlette_client import OAuth
-from starlette.config import Config
-
-config = Config('.env')
-
-oauth = OAuth()
-
-# Google OAuth
-oauth.register(
-    name='google',
-    client_id=config('OAUTH_GOOGLE_CLIENT_ID', default=''),
-    client_secret=config('OAUTH_GOOGLE_CLIENT_SECRET', default=''),
-    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-    client_kwargs={'scope': 'openid email profile'}
-)
-
-# GitHub OAuth
-oauth.register(
-    name='github',
-    client_id=config('OAUTH_GITHUB_CLIENT_ID', default=''),
-    client_secret=config('OAUTH_GITHUB_CLIENT_SECRET', default=''),
-    authorize_url='https://github.com/login/oauth/authorize',
-    authorize_params=None,
-    access_token_url='https://github.com/login/oauth/access_token',
-    access_token_params=None,
-    refresh_token_url=None,
-    client_kwargs={'scope': 'user:email'}
-)
-````
-
-### 4.2 Enhance Auth Service with JWT
-
-````python
-from datetime import datetime, timedelta
-from jose import JWTError, jwt
-import hashlib
-from config import settings
-
-# ...existing code...
-
-class AuthService:
-    # ...existing code...
-    
-    def create_session_token(self, user_id: str) -> tuple[str, str]:
-        """Create JWT session token and return (token, token_hash)"""
-        expiration = datetime.utcnow() + timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
-        
-        payload = {
-            "sub": str(user_id),
-            "exp": expiration,
-            "iat": datetime.utcnow(),
-            "type": "session"
-        }
-        
-        token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
-        
-        return token, token_hash
-    
-    def verify_session_token(self, token: str) -> str | None:
-        """Verify JWT token and return user_id if valid"""
-        try:
-            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-            if payload.get("type") != "session":
-                return None
-            return payload.get("sub")
-        except JWTError:
-            return None
-    
-    def get_or_create_oauth_user(
-        self, 
-        db, 
-        email: str, 
-        name: str, 
-        provider: str, 
-        oauth_id: str,
-        avatar_url: str = None
-    ) -> User:
-        """Get existing OAuth user or create new one"""
-        # Check if user exists with this OAuth provider
-        user = db.query(User).filter(
-            User.oauth_provider == provider,
-            User.oauth_id == oauth_id
-        ).first()
-        
-        if user:
-            # Update user info
-            user.name = name
-            user.email = email
-            if avatar_url:
-                user.avatar_url = avatar_url
-            db.commit()
-            db.refresh(user)
-            return user
-        
-        # Check if user exists with same email (link accounts)
-        user = db.query(User).filter(User.email == email).first()
-        if user:
-            user.oauth_provider = provider
-            user.oauth_id = oauth_id
-            if avatar_url:
-                user.avatar_url = avatar_url
-            db.commit()
-            db.refresh(user)
-            return user
-        
-        # Create new user
-        user = User(
-            email=email,
-            name=name,
-            oauth_provider=provider,
-            oauth_id=oauth_id,
-            avatar_url=avatar_url,
-            role=UserRole.VIEWER.value  # Default role for OAuth users
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
-    
-    def create_user_session(
-        self,
-        db,
-        user_id: str,
-        user_agent: str = None,
-        ip_address: str = None
-    ) -> tuple[str, UserSession]:
-        """Create a new user session and return (token, session)"""
-        token, token_hash = self.create_session_token(user_id)
-        
-        session = UserSession(
-            user_id=user_id,
-            token_hash=token_hash,
-            expires_at=datetime.utcnow() + timedelta(minutes=settings.JWT_EXPIRATION_MINUTES),
-            user_agent=user_agent,
-            ip_address=ip_address
-        )
-        db.add(session)
-        db.commit()
-        db.refresh(session)
-        
-        return token, session
-
-auth_service = AuthService()
-````
-
----
-
-## Phase 5: Update Dependencies
-
-### 5.1 Add OAuth Dependency
-
-````python
-from fastapi import Depends, HTTPException, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
-from db import get_db_session
-from auth.service import auth_service
-from auth.models import User, UserRole
-import hashlib
-
-# ...existing code...
-
-security_bearer = HTTPBearer(auto_error=False)
-
-async def get_current_user_optional(
-    credentials: HTTPAuthorizationCredentials = Depends(security_bearer),
-    db: Session = Depends(get_db_session)
-) -> User | None:
-    """Get current user from API key or session token (optional)"""
-    if not credentials:
-        return None
-    
-    token = credentials.credentials
-    
-    # Try API key first
-    user = auth_service.get_user_by_api_key(db, token)
-    if user:
-        return user
-    
-    # Try session token
-    user_id = auth_service.verify_session_token(token)
-    if user_id:
-        # Verify session exists and is not expired
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
-        session = db.query(UserSession).filter(
-            UserSession.token_hash == token_hash,
-            UserSession.expires_at > datetime.utcnow()
-        ).first()
-        
-        if session:
-            # Update last used
-            session.last_used_at = datetime.utcnow()
-            db.commit()
-            
-            return db.query(User).filter(User.id == user_id).first()
-    
-    return None
-
-async def get_current_user(
-    user: User | None = Depends(get_current_user_optional)
-) -> User:
-    """Get current user from API key or session token (required)"""
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
-
-# ...existing code...
-````
-
----
-
-## Phase 6: Implement OAuth Routes
-
-### 6.1 Add OAuth Endpoints
-
-````python
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
-from db import get_db_session
-from auth.oauth import oauth
-from auth.service import auth_service
-from auth.dependencies import get_current_user
-from auth.models import User
-from config import settings
-
-router = APIRouter(prefix="/auth", tags=["auth"])
-
-# ...existing code...
-
-@router.get("/login/{provider}")
-async def oauth_login(provider: str, request: Request):
-    """Initiate OAuth login flow"""
-    if provider not in ['google', 'github']:
-        raise HTTPException(status_code=400, detail="Invalid OAuth provider")
-    
-    redirect_uri = request.url_for('oauth_callback', provider=provider)
-    return await oauth.create_client(provider).authorize_redirect(request, redirect_uri)
-
-@router.get("/callback/{provider}")
-async def oauth_callback(
-    provider: str,
-    request: Request,
-    db: Session = Depends(get_db_session)
-):
-    """Handle OAuth callback"""
-    if provider not in ['google', 'github']:
-        raise HTTPException(status_code=400, detail="Invalid OAuth provider")
-    
-    try:
-        # Get access token
-        token = await oauth.create_client(provider).authorize_access_token(request)
-        
-        # Get user info from provider
-        if provider == 'google':
-            user_info = token.get('userinfo')
-            email = user_info.get('email')
-            name = user_info.get('name')
-            oauth_id = user_info.get('sub')
-            avatar_url = user_info.get('picture')
-        elif provider == 'github':
-            resp = await oauth.github.get('user', token=token)
-            user_info = resp.json()
-            email = user_info.get('email')
-            name = user_info.get('name') or user_info.get('login')
-            oauth_id = str(user_info.get('id'))
-            avatar_url = user_info.get('avatar_url')
-        
-        if not email:
-            raise HTTPException(status_code=400, detail="Email not provided by OAuth provider")
-        
-        # Get or create user
-        user = auth_service.get_or_create_oauth_user(
-            db, email, name, provider, oauth_id, avatar_url
-        )
-        
-        # Create session
-        user_agent = request.headers.get('user-agent')
-        ip_address = request.client.host if request.client else None
-        session_token, _ = auth_service.create_user_session(db, str(user.id), user_agent, ip_address)
-        
-        # Redirect to frontend with token
-        frontend_url = f"{settings.FRONTEND_URL}/auth/callback?token={session_token}"
-        return RedirectResponse(url=frontend_url)
-        
-    except Exception as e:
-        # Redirect to frontend with error
-        frontend_url = f"{settings.FRONTEND_URL}/auth/callback?error=oauth_failed"
-        return RedirectResponse(url=frontend_url)
-
-@router.post("/logout")
-async def logout(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db_session)
-):
-    """Logout and invalidate session token"""
-    auth_header = request.headers.get('authorization')
-    if auth_header and auth_header.startswith('Bearer '):
-        token = auth_header.split(' ')[1]
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
-        
-        # Delete session
-        db.query(UserSession).filter(UserSession.token_hash == token_hash).delete()
-        db.commit()
-    
-    return {"message": "Logged out successfully"}
-
-@router.get("/me")
-async def get_current_user_info(user: User = Depends(get_current_user)):
-    """Get current user information"""
-    return {
-        "id": str(user.id),
-        "email": user.email,
-        "name": user.name,
-        "role": user.role,
-        "oauth_provider": user.oauth_provider,
-        "avatar_url": user.avatar_url
-    }
-
-# ...existing code...
-````
-
----
-
-## Phase 7: Update Configuration
-
-### 7.1 Add OAuth Settings
-
-````python
-from pydantic_settings import BaseSettings
-
-class Settings(BaseSettings):
-    # ...existing code...
-    
-    # OAuth Configuration
-    OAUTH_GOOGLE_CLIENT_ID: str = ""
-    OAUTH_GOOGLE_CLIENT_SECRET: str = ""
-    OAUTH_GITHUB_CLIENT_ID: str = ""
-    OAUTH_GITHUB_CLIENT_SECRET: str = ""
-    
-    # JWT Configuration
-    SECRET_KEY: str = "change-this-to-random-secret-key"
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_MINUTES: int = 1440  # 24 hours
-    
-    # Frontend URL
-    FRONTEND_URL: str = "http://localhost:5173"
-    
-    # ...existing code...
-
-settings = Settings()
-````
-
----
-
-## Phase 8: Update Requirements
-
-### 8.1 Add OAuth Dependencies
-
-````python
-# ...existing code...
-
-# OAuth
-authlib==1.3.0
-python-jose[cryptography]==3.3.0
-python-multipart==0.0.6
-````
-
----
-
-## Phase 9: Frontend Integration
-
-### 9.1 Create OAuth Login Component
-
-````svelte
-<script>
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-  
-  function loginWithGoogle() {
-    window.location.href = `${API_URL}/auth/login/google`;
-  }
-  
-  function loginWithGitHub() {
-    window.location.href = `${API_URL}/auth/login/github`;
-  }
-</script>
-
-<div class="oauth-buttons">
-  <button on:click={loginWithGoogle} class="btn-oauth btn-google">
-    <svg class="icon"><!-- Google icon SVG --></svg>
-    Continue with Google
-  </button>
-  
-  <button on:click={loginWithGitHub} class="btn-oauth btn-github">
-    <svg class="icon"><!-- GitHub icon SVG --></svg>
-    Continue with GitHub
-  </button>
-</div>
-
-<style>
-  .oauth-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    max-width: 300px;
-  }
-  
-  .btn-oauth {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1.5rem;
-    border: 1px solid #ddd;
-    border-radius: 0.5rem;
-    background: white;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  
-  .btn-oauth:hover {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  }
-</style>
-````
-
-### 9.2 Create OAuth Callback Handler
-
-````svelte
-<script>
-  import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+```svelte
+<script lang="ts">
   import { page } from '$app/stores';
-  
-  onMount(() => {
-    const token = $page.url.searchParams.get('token');
-    const error = $page.url.searchParams.get('error');
-    
-    if (token) {
-      // Store token in localStorage
-      localStorage.setItem('auth_token', token);
-      
-      // Redirect to dashboard
-      goto('/dashboard');
-    } else if (error) {
-      // Handle error
-      goto('/login?error=' + error);
-    }
-  });
+  import { getAuthHelpers } from '$lib/auth.svelte';
+
+  // Reactive auth state from server-provided user data
+  let auth = $derived(getAuthHelpers($page.data.user));
 </script>
 
-<div class="loading">
-  <p>Completing login...</p>
-</div>
-````
+{#if auth.isAuthenticated}
+  <p>Welcome, {auth.user.name}</p>
+  {#if auth.isAdmin}
+    <a href="/admin">Admin Panel</a>
+  {/if}
+{:else}
+  <a href="/auth/login">Sign In</a>
+{/if}
+```
+
+### Form Actions (Login/Register)
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+
+  let isLoading = $state(false);
+</script>
+
+<form method="POST" use:enhance={() => {
+  isLoading = true;
+  return async ({ update }) => {
+    isLoading = false;
+    await update();
+  };
+}}
+  <input type="email" name="email" required />
+  <input type="password" name="password" required />
+  <button type="submit" disabled={isLoading}>
+    {isLoading ? 'Signing in...' : 'Sign In'}
+  </button>
+</form>
+```
+
+### Frontend Logout
+
+```svelte
+<script lang="ts">
+  function handleLogout() {
+    window.location.href = '/logout';
+  }
+</script>
+
+<button onclick={handleLogout}>Sign Out</button>
+```
 
 ---
 
-## Phase 10: Testing & Deployment
+## Testing Checklist
 
-### 10.1 Testing Checklist
-
-- [ ] Google OAuth login flow
-- [ ] GitHub OAuth login flow
-- [ ] Session token validation
-- [ ] Session expiration
-- [ ] Logout functionality
-- [ ] API key authentication still works
+- [ ] Email/password login
+- [ ] TOTP verification (if enabled)
+- [ ] Registration with auto-login
+- [ ] Session persistence across page refreshes
+- [ ] Logout clears session
+- [ ] Expired session redirects to login
+- [ ] OAuth login (Google)
+- [ ] OAuth login (GitHub)
+- [ ] OAuth login (Microsoft)
+- [ ] OAuth account linking (same email)
+- [ ] API key authentication (CLI only)
+- [ ] API key rejection on browser routes
 - [ ] Role-based access control
-- [ ] Account linking (same email, different providers)
-- [ ] Token refresh on expiration
-- [ ] Security: CSRF protection, XSS prevention
-
-### 10.2 Deployment Steps
-
-1. **Generate secure SECRET_KEY**:
-
-   ```bash
-   python -c "import secrets; print(secrets.token_urlsafe(32))"
-   ```
-
-2. **Update production environment variables**
-
-3. **Run database migration**:
-
-   ```bash
-   alembic upgrade head
-   ```
-
-4. **Update OAuth redirect URIs** in Google/GitHub console to production URLs
-
-5. **Test OAuth flow** in production environment
+- [ ] Protected route redirects when unauthenticated
 
 ---
 
-## Summary
+## Migration from Legacy Auth
 
-This plan implements OAuth authentication alongside existing API key authentication, providing users with multiple login options while maintaining backward compatibility. The hybrid system supports both programmatic access (API keys) and human users (OAuth).
+The legacy client-side authentication has been deprecated. If migrating:
+
+1. Remove localStorage token storage
+2. Replace `getAuthState()` with `getAuthHelpers($page.data.user)`
+3. Convert client-side API calls to form actions
+4. Use `window.location.href = '/logout'` instead of `clearAuth()`
+5. Remove any `Authorization` header logic from browser code

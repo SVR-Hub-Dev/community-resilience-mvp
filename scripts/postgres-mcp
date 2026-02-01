@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOG_DIR="$PROJECT_ROOT/.mcp-logs"
+mkdir -p "$LOG_DIR"
+
+LOG_FILE="$LOG_DIR/postgres-mcp-$(date +%Y%m%d-%H%M%S).log"
+
+echo "[INFO] Starting Postgres MCP server" | tee -a "$LOG_FILE"
+
+if [ -f "$PROJECT_ROOT/node_modules/.bin/postgres-mcp" ]; then
+  exec "$PROJECT_ROOT/node_modules/.bin/postgres-mcp" "$@" 2>&1 | tee -a "$LOG_FILE"
+fi
+
+if command -v postgres-mcp >/dev/null 2>&1; then
+  exec postgres-mcp "$@" 2>&1 | tee -a "$LOG_FILE"
+fi
+
+echo "[ERROR] postgres-mcp not found" | tee -a "$LOG_FILE"
+exit 1
