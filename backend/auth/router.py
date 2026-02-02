@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, cast
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from config import Settings
 from db import get_db
-from auth.models import User, Session as SessionModel
+from auth.models import User, Session as SessionModel, PasswordResetToken
 from auth.service import auth_service
 
 logger = logging.getLogger("community_resilience.auth.router")
@@ -512,3 +513,136 @@ def internal_oauth_find_or_create(
         role=cast(str, user.role),
         created=True,
     )
+
+
+# ============================================================================
+# Password Reset Endpoints
+# ============================================================================
+
+
+class PasswordResetRequestIn(BaseModel):
+    email: str
+
+
+class PasswordResetConfirmIn(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/password-reset/request")
+def internal_request_password_reset(
+    payload: PasswordResetRequestIn,
+    request: Request,
+    _=Depends(_require_internal_secret),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Request a password reset email.
+    Always returns success to prevent email enumeration.
+    """
+    email = payload.email.lower().strip()
+    logger.debug("internal.password_reset.request", extra={"email": email})
+
+    # Find user by email
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+
+    if user and user.is_active:
+        # Generate a secure random token
+        token = secrets.token_urlsafe(32)
+        token_hash = auth_service.hash_password(token)
+
+        # Create reset token (expires in 1 hour)
+        reset_token = PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        db.add(reset_token)
+        db.commit()
+
+        # TODO: Send email with reset link
+        # For now, log the token (in production, send via email)
+        logger.info(
+            "internal.password_reset.token_created",
+            extra={
+                "user_id": user.id,
+                "email": email,
+                "token": token,  # Remove this in production!
+            },
+        )
+
+        # In a real application, you would send an email here:
+        # reset_url = f"https://yourdomain.com/auth/reset-password?token={token}"
+        # send_email(user.email, "Password Reset", reset_url)
+
+    # Always return success to prevent email enumeration
+    return {"message": "If an account exists, a password reset email will be sent"}
+
+
+@router.post("/password-reset/confirm")
+def internal_confirm_password_reset(
+    payload: PasswordResetConfirmIn,
+    request: Request,
+    _=Depends(_require_internal_secret),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Confirm password reset with token and set new password.
+    """
+    token = payload.token
+    new_password = payload.new_password
+
+    logger.debug("internal.password_reset.confirm")
+
+    # Hash the provided token
+    token_hash = auth_service.hash_password(token)
+
+    # Find valid reset token
+    reset_token = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.is_used == False,
+            PasswordResetToken.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+
+    if not reset_token:
+        logger.warning("internal.password_reset.invalid_token")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    # Get the user
+    user = db.query(User).filter(User.id == reset_token.user_id).first()
+    if not user or not user.is_active:
+        logger.warning(
+            "internal.password_reset.user_not_found",
+            extra={"user_id": reset_token.user_id},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset token",
+        )
+
+    # Update password
+    user.password_hash = auth_service.hash_password(new_password)
+
+    # Mark token as used
+    reset_token.is_used = True
+
+    # Invalidate all existing sessions for security
+    db.query(SessionModel).filter(SessionModel.user_id == user.id).update(
+        {"is_active": False}
+    )
+
+    db.commit()
+
+    logger.info(
+        "internal.password_reset.success",
+        extra={"user_id": user.id, "email": user.email},
+    )
+
+    return {"message": "Password successfully reset"}

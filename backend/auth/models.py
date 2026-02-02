@@ -131,3 +131,28 @@ class Session(Base):
 
     def __repr__(self):
         return f"<Session(id={self.id}, user_id={self.user_id})>"
+
+
+class PasswordResetToken(Base):
+    """
+    Password reset token for secure password recovery.
+
+    Tokens are one-time use and expire after a set period.
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    is_used = Column(Boolean, default=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<PasswordResetToken(id={self.id}, user_id={self.user_id}, is_used={self.is_used})>"
