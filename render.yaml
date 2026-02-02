@@ -9,7 +9,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    startCommand: PYTHONPATH=/opt/render/project/src/backend:$PYTHONPATH uvicorn app:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       # Database - connect to Neon PostgreSQL
@@ -27,3 +27,37 @@ services:
         value: all-MiniLM-L6-v2
       - key: EMBEDDING_DIMENSION
         value: "384"
+      # Deployment Mode
+      - key: DEPLOYMENT_MODE
+        value: cloud
+      # Authentication
+      - key: JWT_SECRET_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: INTERNAL_AUTH_SECRET
+        sync: false  # Set manually in Render dashboard
+      - key: FRONTEND_URL
+        sync: false  # Set manually in Render dashboard (e.g., https://your-app.netlify.app)
+      # Email (Resend)
+      - key: RESEND_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: EMAIL_FROM_ADDRESS
+        sync: false  # Set manually in Render dashboard
+      - key: EMAIL_FROM_NAME
+        value: Community Resilience
+      - key: ADMIN_EMAIL
+        sync: false  # Set manually in Render dashboard
+      - key: EMAIL_ENABLED
+        value: "true"
+      # OAuth (optional)
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_OAUTH_CLIENT_ID
+        sync: false
+      - key: GITHUB_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_SECRET
+        sync: false
