@@ -1,2 +1,11 @@
 [build]
   base = "frontend"
+  command = "pnpm run build"
+  publish = "frontend/build"
+
+[functions]
+  directory = "frontend/.netlify/functions-internal"
+  node_bundler = "esbuild"
+
+[build.environment]
+  NODE_VERSION = "22"
