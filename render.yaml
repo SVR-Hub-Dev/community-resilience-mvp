@@ -8,13 +8,10 @@ services:
     region: oregon
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r requirements.txt && chmod +x start.sh
+    startCommand: ./start.sh
     healthCheckPath: /health
     envVars:
-      # Python path for module imports
-      - key: PYTHONPATH
-        value: /opt/render/project/src/backend
       # Database - connect to Neon PostgreSQL
       - key: DATABASE_URL
         sync: false  # Set manually in Render dashboard
