@@ -5,8 +5,19 @@ import logging
 import sys
 from pathlib import Path
 
+# Debug prints
+print("DEBUG: __file__ =", __file__)
+print("DEBUG: Path(__file__).parent =", Path(__file__).parent)
+print("DEBUG: os.getcwd() =", os.getcwd())
+print("DEBUG: sys.path before =", sys.path[:3])
+
 # Add the backend directory to Python path
 sys.path.insert(0, "/opt/render/project/src/backend")
+
+print("DEBUG: sys.path after =", sys.path[:3])
+print(
+    "DEBUG: models exists =", os.path.exists("/opt/render/project/src/backend/models")
+)
 
 from typing import List, Optional, cast
 from contextlib import asynccontextmanager
