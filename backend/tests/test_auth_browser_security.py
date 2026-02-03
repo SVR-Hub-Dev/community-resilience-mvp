@@ -102,7 +102,8 @@ def response_contains_jwt(response_data: dict) -> bool:
     # Look for JWT patterns (3 base64 segments separated by dots)
     # JWTs are typically long strings with dots
     import re
-    jwt_pattern = r'[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'
+
+    jwt_pattern = r"[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}"
     return bool(re.search(jwt_pattern, json_str))
 
 
@@ -116,7 +117,9 @@ def response_contains_api_key(response_data: dict) -> bool:
 class TestSessionCreationSecurity:
     """Test that session creation doesn't expose tokens to browser."""
 
-    def test_session_create_returns_only_session_id(self, client, test_user, internal_secret):
+    def test_session_create_returns_only_session_id(
+        self, client, test_user, internal_secret
+    ):
         """Test that session creation returns only session ID, no JWTs."""
         response = client.post(
             "/internal/auth/session/create",
@@ -144,10 +147,13 @@ class TestSessionCreationSecurity:
         session_id = data["session_id"]
         assert "." not in str(session_id) or str(session_id).count(".") < 2
 
-    def test_session_validate_returns_only_user_info(self, client, test_user, db, internal_secret):
+    def test_session_validate_returns_only_user_info(
+        self, client, test_user, db, internal_secret
+    ):
         """Test that session validation returns only user info, no tokens."""
         # Create session
         import uuid
+
         session = UserSession(
             user_id=test_user.id,
             session_token=uuid.uuid4().hex,
@@ -219,7 +225,9 @@ class TestPasswordVerificationSecurity:
         if "access_token" in data:
             pytest.fail("access_token should not be returned to browser")
 
-    def test_password_verify_with_totp_returns_no_jwt(self, client, db, internal_secret):
+    def test_password_verify_with_totp_returns_no_jwt(
+        self, client, db, internal_secret
+    ):
         """Test that password verification with TOTP doesn't expose JWTs."""
         # Create user with TOTP
         password = "TestPassword123!"
@@ -259,11 +267,12 @@ class TestPasswordVerificationSecurity:
 
         # Verify it's a proper TOTP pending token, not a full access token
         import jwt
+
         payload = jwt.decode(
             totp_token,
             auth_service.secret_key,
             algorithms=[auth_service.algorithm],
-            options={"verify_exp": False}
+            options={"verify_exp": False},
         )
         assert payload.get("type") == "totp_pending"
         assert "exp" in payload
@@ -300,6 +309,7 @@ class TestPasswordVerificationSecurity:
 
         # Generate valid TOTP code
         import pyotp
+
         totp = pyotp.TOTP(totp_secret)
         valid_code = totp.now()
 
@@ -370,10 +380,13 @@ class TestOAuthFlowSecurity:
 class TestAPIResponses:
     """Test that API responses never leak tokens."""
 
-    def test_session_delete_returns_no_tokens(self, client, test_user, db, internal_secret):
+    def test_session_delete_returns_no_tokens(
+        self, client, test_user, db, internal_secret
+    ):
         """Test that session deletion doesn't expose tokens."""
         # Create session
         import uuid
+
         session = UserSession(
             user_id=test_user.id,
             session_token=uuid.uuid4().hex,
@@ -424,7 +437,9 @@ class TestAPIResponses:
 class TestSecurityHeaders:
     """Test that responses have appropriate security characteristics."""
 
-    def test_responses_dont_cache_sensitive_data(self, client, test_user, internal_secret):
+    def test_responses_dont_cache_sensitive_data(
+        self, client, test_user, internal_secret
+    ):
         """Test that sensitive endpoints don't cache responses."""
         response = client.post(
             "/internal/auth/verify-password",
@@ -441,18 +456,29 @@ class TestSecurityHeaders:
         # Note: This is aspirational - the actual implementation may not have these
         cache_control = response.headers.get("Cache-Control", "")
         if cache_control:
-            assert "no-store" in cache_control.lower() or "no-cache" in cache_control.lower()
+            assert (
+                "no-store" in cache_control.lower()
+                or "no-cache" in cache_control.lower()
+            )
 
 
 class TestDerivedJWTIsolation:
     """Test that derived JWTs are never exposed to browser context."""
 
-    def test_no_derived_jwt_in_browser_responses(self, client, test_user, internal_secret):
+    def test_no_derived_jwt_in_browser_responses(
+        self, client, test_user, internal_secret
+    ):
         """Test that derived JWTs are never returned to browser."""
         # Test all browser-facing auth endpoints
         endpoints = [
-            ("/internal/auth/session/create", {"user_id": test_user.id, "ttl_seconds": 3600}),
-            ("/internal/auth/verify-password", {"email": test_user.email, "password": test_user.plain_password}),
+            (
+                "/internal/auth/session/create",
+                {"user_id": test_user.id, "ttl_seconds": 3600},
+            ),
+            (
+                "/internal/auth/verify-password",
+                {"email": test_user.email, "password": test_user.plain_password},
+            ),
         ]
 
         for endpoint, payload in endpoints:
@@ -476,12 +502,20 @@ class TestDerivedJWTIsolation:
 class TestTokenTypeIsolation:
     """Test that different token types are properly isolated."""
 
-    def test_api_keys_never_in_browser_responses(self, client, test_user, internal_secret):
+    def test_api_keys_never_in_browser_responses(
+        self, client, test_user, internal_secret
+    ):
         """Test that API keys are never returned to browser contexts."""
         # All browser-facing endpoints
         endpoints = [
-            ("/internal/auth/session/create", {"user_id": test_user.id, "ttl_seconds": 3600}),
-            ("/internal/auth/verify-password", {"email": test_user.email, "password": test_user.plain_password}),
+            (
+                "/internal/auth/session/create",
+                {"user_id": test_user.id, "ttl_seconds": 3600},
+            ),
+            (
+                "/internal/auth/verify-password",
+                {"email": test_user.email, "password": test_user.plain_password},
+            ),
         ]
 
         for endpoint, payload in endpoints:
@@ -500,7 +534,9 @@ class TestTokenTypeIsolation:
                 # Should NOT contain "api_key" field
                 assert "api_key" not in data
 
-    def test_refresh_tokens_never_in_browser_responses(self, client, test_user, internal_secret):
+    def test_refresh_tokens_never_in_browser_responses(
+        self, client, test_user, internal_secret
+    ):
         """Test that refresh tokens are never exposed to browser."""
         response = client.post(
             "/internal/auth/session/create",
@@ -522,7 +558,9 @@ class TestTokenTypeIsolation:
 class TestCompleteBrowserFlow:
     """Test complete browser authentication flows for token leakage."""
 
-    def test_complete_password_login_flow_no_tokens(self, client, test_user, internal_secret):
+    def test_complete_password_login_flow_no_tokens(
+        self, client, test_user, internal_secret
+    ):
         """Test complete login flow exposes no tokens to browser."""
         # Step 1: Password verification
         password_response = client.post(

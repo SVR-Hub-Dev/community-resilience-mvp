@@ -379,7 +379,9 @@ class TestRoleBasedAuthorization:
 
         assert response.status_code == 403
 
-    def test_all_roles_can_access_viewer_endpoint(self, client, admin_user, editor_user, viewer_user):
+    def test_all_roles_can_access_viewer_endpoint(
+        self, client, admin_user, editor_user, viewer_user
+    ):
         """Test that all roles can access viewer endpoints."""
         users = [admin_user, editor_user, viewer_user]
 
@@ -516,10 +518,7 @@ class TestJWTLifecycle:
 
     def test_multiple_concurrent_jwts(self, client, admin_user):
         """Test that multiple JWTs for the same user work concurrently."""
-        tokens = [
-            create_derived_jwt(admin_user.id, admin_user.role)
-            for _ in range(3)
-        ]
+        tokens = [create_derived_jwt(admin_user.id, admin_user.role) for _ in range(3)]
 
         # All tokens should work
         for token in tokens:
@@ -539,7 +538,9 @@ class TestJWTLifecycle:
         ]
 
         for expiry in expiry_times:
-            token = create_derived_jwt(admin_user.id, admin_user.role, expires_delta=expiry)
+            token = create_derived_jwt(
+                admin_user.id, admin_user.role, expires_delta=expiry
+            )
 
             response = client.get(
                 "/protected/derived",

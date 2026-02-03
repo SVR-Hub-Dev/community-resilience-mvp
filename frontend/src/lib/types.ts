@@ -237,3 +237,65 @@ export interface KGNetworkData {
 		confidence_score: number;
 	}>;
 }
+
+// ============================================================================
+// Support System Types
+// ============================================================================
+
+export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface UserBrief {
+	id: number;
+	email: string;
+	name: string | null;
+}
+
+export interface SupportTicket {
+	id: number;
+	user_id: number | null;
+	subject: string;
+	description: string;
+	status: TicketStatus;
+	priority: TicketPriority;
+	assigned_to: number | null;
+	created_at: string;
+	updated_at: string;
+	resolved_at: string | null;
+}
+
+export interface TicketResponse {
+	id: number;
+	ticket_id: number;
+	user_id: number | null;
+	message: string;
+	is_internal: boolean;
+	created_at: string;
+	user: UserBrief | null;
+}
+
+export interface TicketDetail extends SupportTicket {
+	user: UserBrief | null;
+	assignee: UserBrief | null;
+	responses: TicketResponse[];
+}
+
+export interface TicketListResponse {
+	tickets: SupportTicket[];
+	total: number;
+}
+
+export interface ContactSubmission {
+	id: number;
+	name: string;
+	email: string;
+	subject: string;
+	message: string;
+	is_read: boolean;
+	created_at: string;
+}
+
+export interface ContactListResponse {
+	contacts: ContactSubmission[];
+	total: number;
+}

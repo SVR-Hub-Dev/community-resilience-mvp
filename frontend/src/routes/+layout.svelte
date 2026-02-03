@@ -48,6 +48,10 @@
 				<a href="/documents" class="nav-link">Documents</a>
 				<a href="/events" class="nav-link">Events</a>
 				<a href="/assets" class="nav-link">Assets</a>
+				<a href="/contact" class="nav-link">Contact</a>
+				{#if auth.isAuthenticated}
+					<a href="/support" class="nav-link">Support</a>
+				{/if}
 
 				{#if auth.isAuthenticated && auth.user}
 					<div class="user-menu-container">
@@ -127,6 +131,32 @@
 											/>
 										</svg>
 										Manage Users
+									</a>
+									<a href="/admin/support" class="dropdown-item" onclick={closeUserMenu}>
+										<svg viewBox="0 0 20 20" width="16" height="16">
+											<path
+												fill="currentColor"
+												d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"
+											/>
+											<path
+												fill="currentColor"
+												d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"
+											/>
+										</svg>
+										Support Tickets
+									</a>
+									<a href="/admin/contacts" class="dropdown-item" onclick={closeUserMenu}>
+										<svg viewBox="0 0 20 20" width="16" height="16">
+											<path
+												fill="currentColor"
+												d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"
+											/>
+											<path
+												fill="currentColor"
+												d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"
+											/>
+										</svg>
+										Contact Messages
 									</a>
 								{/if}
 								<div class="dropdown-divider"></div>

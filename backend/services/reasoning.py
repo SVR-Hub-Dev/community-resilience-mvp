@@ -186,7 +186,7 @@ def parse_response(response: str) -> Dict[str, Any]:
         pass
 
     # Try to extract JSON from response (model may include extra text)
-    json_match = re.search(r'\{[\s\S]*\}', response)
+    json_match = re.search(r"\{[\s\S]*\}", response)
     if json_match:
         try:
             data = json.loads(json_match.group())
@@ -221,11 +221,7 @@ def validate_response(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def error_response(message: str) -> Dict[str, Any]:
     """Return a structured error response."""
-    return {
-        "summary": message,
-        "actions": [],
-        "error": True
-    }
+    return {"summary": message, "actions": [], "error": True}
 
 
 async def run_reasoning_model(
@@ -260,8 +256,7 @@ async def run_reasoning_model(
             logger.info(f"Calling LLM (attempt {attempt + 1}/{MAX_RETRIES + 1})")
 
             response = await asyncio.wait_for(
-                llm.generate(prompt),
-                timeout=TIMEOUT_SECONDS
+                llm.generate(prompt), timeout=TIMEOUT_SECONDS
             )
 
             result = parse_response(response)

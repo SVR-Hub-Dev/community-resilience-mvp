@@ -201,6 +201,7 @@ class TestOAuthUserLinking:
 
         # Verify OAuth identity was linked
         from sqlalchemy.orm import Session
+
         db = Session.object_session(existing_user)
         db.refresh(existing_user)
         assert existing_user.oauth_provider == "google"

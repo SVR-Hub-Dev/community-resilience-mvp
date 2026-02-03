@@ -86,9 +86,9 @@ def retrieve_relevant_assets(
     if status:
         query = query.filter(CommunityAsset.status == status)
 
-    query = query.order_by(
-        CommunityAsset.embedding.l2_distance(query_embedding)
-    ).limit(limit)
+    query = query.order_by(CommunityAsset.embedding.l2_distance(query_embedding)).limit(
+        limit
+    )
 
     results = query.all()
     logger.debug(f"Retrieved {len(results)} assets")
@@ -118,9 +118,9 @@ def retrieve_relevant_events(
     if event_type:
         query = query.filter(CommunityEvent.event_type == event_type)
 
-    query = query.order_by(
-        CommunityEvent.embedding.l2_distance(query_embedding)
-    ).limit(limit)
+    query = query.order_by(CommunityEvent.embedding.l2_distance(query_embedding)).limit(
+        limit
+    )
 
     results = query.all()
     logger.debug(f"Retrieved {len(results)} events")

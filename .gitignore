@@ -4,6 +4,7 @@
 .env.local
 .env.*.local
 !.env.example
+temp/
 
 # Python
 __pycache__/

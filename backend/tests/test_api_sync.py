@@ -399,8 +399,9 @@ class TestSyncPull:
         mock_result.scalars.return_value.all.return_value = []
         mock_db.execute.return_value = mock_result
 
-        with patch("api.sync.SyncLog") as mock_sync_log, \
-             patch("api.sync.SyncMetadata") as mock_sync_meta:
+        with patch("api.sync.SyncLog") as mock_sync_log, patch(
+            "api.sync.SyncMetadata"
+        ) as mock_sync_meta:
             mock_log_instance = AsyncMock()
             mock_sync_log.start_sync = AsyncMock(return_value=mock_log_instance)
             mock_sync_meta.set_value = AsyncMock()
@@ -431,8 +432,9 @@ class TestSyncPull:
         mock_result.scalars.return_value.all.return_value = [fake_doc]
         mock_db.execute.return_value = mock_result
 
-        with patch("api.sync.SyncLog") as mock_sync_log, \
-             patch("api.sync.SyncMetadata") as mock_sync_meta:
+        with patch("api.sync.SyncLog") as mock_sync_log, patch(
+            "api.sync.SyncMetadata"
+        ) as mock_sync_meta:
             mock_log_instance = AsyncMock()
             mock_sync_log.start_sync = AsyncMock(return_value=mock_log_instance)
             mock_sync_meta.set_value = AsyncMock()
@@ -451,8 +453,9 @@ class TestSyncPull:
         mock_result.scalars.return_value.all.return_value = []
         mock_db.execute.return_value = mock_result
 
-        with patch("api.sync.SyncLog") as mock_sync_log, \
-             patch("api.sync.SyncMetadata") as mock_sync_meta:
+        with patch("api.sync.SyncLog") as mock_sync_log, patch(
+            "api.sync.SyncMetadata"
+        ) as mock_sync_meta:
             mock_log_instance = AsyncMock()
             mock_sync_log.start_sync = AsyncMock(return_value=mock_log_instance)
             mock_sync_meta.set_value = AsyncMock()
@@ -474,13 +477,13 @@ class TestSyncPush:
 
     def test_push_success(self, client, mock_db):
         """Should process pushed documents."""
-        with patch("api.sync.SyncLog") as mock_sync_log, \
-             patch("api.sync.SyncMetadata") as mock_sync_meta, \
-             patch(
-                 "api.sync.update_document_processed",
-                 new_callable=AsyncMock,
-                 return_value=True,
-             ):
+        with patch("api.sync.SyncLog") as mock_sync_log, patch(
+            "api.sync.SyncMetadata"
+        ) as mock_sync_meta, patch(
+            "api.sync.update_document_processed",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
             mock_log_instance = AsyncMock()
             mock_sync_log.start_sync = AsyncMock(return_value=mock_log_instance)
             mock_sync_meta.set_value = AsyncMock()
@@ -507,8 +510,9 @@ class TestSyncPush:
 
     def test_push_with_missing_id(self, client, mock_db):
         """Should report error for documents missing ID."""
-        with patch("api.sync.SyncLog") as mock_sync_log, \
-             patch("api.sync.SyncMetadata") as mock_sync_meta:
+        with patch("api.sync.SyncLog") as mock_sync_log, patch(
+            "api.sync.SyncMetadata"
+        ) as mock_sync_meta:
             mock_log_instance = AsyncMock()
             mock_sync_log.start_sync = AsyncMock(return_value=mock_log_instance)
             mock_sync_meta.set_value = AsyncMock()
@@ -516,9 +520,7 @@ class TestSyncPush:
             response = client.post(
                 "/api/sync/push",
                 json={
-                    "documents": [
-                        {"content": "No ID doc", "processing_mode": "local"}
-                    ],
+                    "documents": [{"content": "No ID doc", "processing_mode": "local"}],
                     "sync_timestamp": datetime.now(timezone.utc).isoformat(),
                 },
             )
@@ -539,13 +541,13 @@ class TestSyncPush:
             # First doc succeeds, second fails
             return call_count == 1
 
-        with patch("api.sync.SyncLog") as mock_sync_log, \
-             patch("api.sync.SyncMetadata") as mock_sync_meta, \
-             patch(
-                 "api.sync.update_document_processed",
-                 new_callable=AsyncMock,
-                 side_effect=update_side_effect,
-             ):
+        with patch("api.sync.SyncLog") as mock_sync_log, patch(
+            "api.sync.SyncMetadata"
+        ) as mock_sync_meta, patch(
+            "api.sync.update_document_processed",
+            new_callable=AsyncMock,
+            side_effect=update_side_effect,
+        ):
             mock_log_instance = AsyncMock()
             mock_sync_log.start_sync = AsyncMock(return_value=mock_log_instance)
             mock_sync_meta.set_value = AsyncMock()
@@ -580,19 +582,19 @@ class TestSyncStatus:
         mock_result.scalars.return_value.all.return_value = []
         mock_db.execute.return_value = mock_result
 
-        with patch("api.sync.SyncConfig") as mock_sync_config, \
-             patch("api.sync.SyncMetadata") as mock_sync_meta, \
-             patch(
-                 "api.sync.get_document_processing_stats",
-                 new_callable=AsyncMock,
-                 return_value={
-                     "total": 5,
-                     "completed": 3,
-                     "pending": 1,
-                     "needs_local": 1,
-                     "failed": 0,
-                 },
-             ):
+        with patch("api.sync.SyncConfig") as mock_sync_config, patch(
+            "api.sync.SyncMetadata"
+        ) as mock_sync_meta, patch(
+            "api.sync.get_document_processing_stats",
+            new_callable=AsyncMock,
+            return_value={
+                "total": 5,
+                "completed": 3,
+                "pending": 1,
+                "needs_local": 1,
+                "failed": 0,
+            },
+        ):
             mock_sync_config.SYNC_ENABLED = True
             mock_sync_meta.get_value = AsyncMock(return_value=None)
             mock_sync_meta.LAST_PULL_TIMESTAMP = "last_pull_timestamp"

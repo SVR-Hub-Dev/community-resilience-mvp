@@ -1,7 +1,7 @@
 """Add document processing fields for hybrid cloud/local deployment.
 
 Revision ID: 003_document_processing
-Revises: 002  # Update this to match your last migration
+Revises: 003a
 Create Date: 2026-01-27
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "003_document_processing"
-down_revision: Union[str, None] = None  # Update to your last migration revision
+down_revision: Union[str, None] = "003a"  # Depends on documents table creation
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

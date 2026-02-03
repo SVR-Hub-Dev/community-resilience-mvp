@@ -21,46 +21,51 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "password_reset_tokens",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("token_hash", sa.String(length=64), nullable=False),
-        sa.Column("is_used", sa.Boolean(), nullable=True),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=True,
-        ),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_password_reset_tokens_id"),
-        "password_reset_tokens",
-        ["id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_password_reset_tokens_is_used"),
-        "password_reset_tokens",
-        ["is_used"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_password_reset_tokens_token_hash"),
-        "password_reset_tokens",
-        ["token_hash"],
-        unique=True,
-    )
-    op.create_index(
-        op.f("ix_password_reset_tokens_user_id"),
-        "password_reset_tokens",
-        ["user_id"],
-        unique=False,
-    )
+    # Check if table already exists
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+
+    if "password_reset_tokens" not in inspector.get_table_names():
+        op.create_table(
+            "password_reset_tokens",
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("user_id", sa.Integer(), nullable=False),
+            sa.Column("token_hash", sa.String(length=64), nullable=False),
+            sa.Column("is_used", sa.Boolean(), nullable=True),
+            sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+                nullable=True,
+            ),
+            sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index(
+            op.f("ix_password_reset_tokens_id"),
+            "password_reset_tokens",
+            ["id"],
+            unique=False,
+        )
+        op.create_index(
+            op.f("ix_password_reset_tokens_is_used"),
+            "password_reset_tokens",
+            ["is_used"],
+            unique=False,
+        )
+        op.create_index(
+            op.f("ix_password_reset_tokens_token_hash"),
+            "password_reset_tokens",
+            ["token_hash"],
+            unique=True,
+        )
+        op.create_index(
+            op.f("ix_password_reset_tokens_user_id"),
+            "password_reset_tokens",
+            ["user_id"],
+            unique=False,
+        )
 
 
 def downgrade() -> None:

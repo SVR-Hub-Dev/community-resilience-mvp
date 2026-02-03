@@ -79,6 +79,18 @@ class Settings(BaseSettings):
     # API Key settings
     api_key_prefix: str = "cr_"
 
+    # Email Configuration (Resend)
+    resend_api_key: str = ""
+    email_from_address: str = "noreply@example.com"
+    email_from_name: str = "Community Resilience"
+    admin_email: str = ""
+    email_enabled: bool = True
+
+    @property
+    def email_configured(self) -> bool:
+        """Check if email is properly configured."""
+        return bool(self.resend_api_key and self.email_from_address)
+
     model_config = SettingsConfigDict(
         env_file=[".env", "../.env"],  # Check both backend and project root
         env_file_encoding="utf-8",

@@ -53,7 +53,7 @@ def load_seed_data(force: bool = False):
                 location=entry.get("location"),
                 hazard_type=entry.get("hazard_type"),
                 source=entry.get("source"),
-                embedding=embedding
+                embedding=embedding,
             )
             db.add(knowledge)
             loaded += 1

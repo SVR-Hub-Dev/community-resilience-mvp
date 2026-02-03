@@ -75,7 +75,13 @@ class TestDocumentUpload:
     @patch("api.documents.validate_file_type")
     @patch("api.documents.DeploymentConfig")
     def test_upload_txt_cloud_mode(
-        self, mock_config, mock_validate_type, mock_save, mock_processor, client, mock_db
+        self,
+        mock_config,
+        mock_validate_type,
+        mock_save,
+        mock_processor,
+        client,
+        mock_db,
     ):
         """Upload a text file in cloud mode should succeed."""
         mock_config.MAX_UPLOAD_SIZE_MB = 10
@@ -125,7 +131,13 @@ class TestDocumentUpload:
     @patch("api.documents.validate_file_type")
     @patch("api.documents.DeploymentConfig")
     def test_upload_docx_needs_full_processing(
-        self, mock_config, mock_validate_type, mock_save, mock_processor, client, mock_db
+        self,
+        mock_config,
+        mock_validate_type,
+        mock_save,
+        mock_processor,
+        client,
+        mock_db,
     ):
         """Uploading a DOCX in cloud mode should mark for full processing."""
         mock_config.MAX_UPLOAD_SIZE_MB = 10
@@ -152,7 +164,9 @@ class TestDocumentUpload:
 
         response = client.post(
             "/api/documents/upload",
-            files={"file": ("report.docx", b"fake docx", "application/vnd.openxmlformats")},
+            files={
+                "file": ("report.docx", b"fake docx", "application/vnd.openxmlformats")
+            },
         )
 
         assert response.status_code == 200
@@ -174,7 +188,13 @@ class TestDocumentUpload:
     @patch("api.documents.validate_file_type")
     @patch("api.documents.DeploymentConfig")
     def test_upload_processing_failure(
-        self, mock_config, mock_validate_type, mock_save, mock_processor, client, mock_db
+        self,
+        mock_config,
+        mock_validate_type,
+        mock_save,
+        mock_processor,
+        client,
+        mock_db,
     ):
         """Processing failure should still create a document with failed status."""
         mock_config.MAX_UPLOAD_SIZE_MB = 10
@@ -215,7 +235,13 @@ class TestDocumentUpload:
     @patch("api.documents.validate_file_type")
     @patch("api.documents.DeploymentConfig")
     def test_upload_uses_filename_as_title(
-        self, mock_config, mock_validate_type, mock_save, mock_processor, client, mock_db
+        self,
+        mock_config,
+        mock_validate_type,
+        mock_save,
+        mock_processor,
+        client,
+        mock_db,
     ):
         """When no title is provided, filename stem should be used."""
         mock_config.MAX_UPLOAD_SIZE_MB = 10

@@ -383,19 +383,25 @@ Local volunteers organized sandbagging operations within 2 hours.
 
             resp = e2e_client.post(
                 "/api/documents/upload",
-                files={"file": (f"doc_{i}.docx", b"PK fake", "application/vnd.openxmlformats")},
+                files={
+                    "file": (
+                        f"doc_{i}.docx",
+                        b"PK fake",
+                        "application/vnd.openxmlformats",
+                    )
+                },
             )
             assert resp.status_code == 200
             doc_ids.append(resp.json()["id"])
 
         # Bulk push all three
-        with patch("api.sync.SyncLog") as mock_sync_log, \
-             patch("api.sync.SyncMetadata") as mock_sync_meta, \
-             patch(
-                 "api.sync.update_document_processed",
-                 new_callable=AsyncMock,
-                 return_value=True,
-             ):
+        with patch("api.sync.SyncLog") as mock_sync_log, patch(
+            "api.sync.SyncMetadata"
+        ) as mock_sync_meta, patch(
+            "api.sync.update_document_processed",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
             mock_log_instance = AsyncMock()
             mock_sync_log.start_sync = AsyncMock(return_value=mock_log_instance)
             mock_sync_meta.set_value = AsyncMock()

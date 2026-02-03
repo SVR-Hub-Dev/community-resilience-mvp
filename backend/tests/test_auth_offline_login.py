@@ -174,7 +174,9 @@ class TestPasswordAuthentication:
         data = response.json()
         assert data["success"] is False
 
-    def test_verify_password_inactive_user(self, client, test_user, db, internal_secret):
+    def test_verify_password_inactive_user(
+        self, client, test_user, db, internal_secret
+    ):
         """Test password verification for inactive user."""
         # Deactivate the user
         test_user.is_active = False
@@ -376,9 +378,7 @@ class TestSessionManagement:
 
         # Verify session exists in database
         session = (
-            db.query(UserSession)
-            .filter(UserSession.user_id == test_user.id)
-            .first()
+            db.query(UserSession).filter(UserSession.user_id == test_user.id).first()
         )
         assert session is not None
         assert session.is_active is True
@@ -463,9 +463,7 @@ class TestSessionManagement:
 
         # Verify session is gone
         session = (
-            db.query(UserSession)
-            .filter(UserSession.user_id == test_user.id)
-            .first()
+            db.query(UserSession).filter(UserSession.user_id == test_user.id).first()
         )
         assert session is None
 

@@ -30,6 +30,7 @@ from auth.derived import (
 from api.kg_router import router as kg_router
 from api.documents import router as documents_router
 from api.sync import router as sync_router
+from api.support import router as support_router
 from auth.dependencies import require_viewer, require_editor
 from auth.models import User
 from services.embeddings import embed_text
@@ -185,6 +186,7 @@ app.include_router(auth_router)
 app.include_router(kg_router)
 app.include_router(documents_router)
 app.include_router(sync_router)
+app.include_router(support_router)
 
 # include internal auth endpoints under /internal/auth
 app.include_router(internal_auth_router)

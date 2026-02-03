@@ -92,7 +92,9 @@ def internal_secret():
 class TestSessionExpiry:
     """Test session expiration detection."""
 
-    def test_expired_session_rejected_by_time(self, client, test_user, db, internal_secret):
+    def test_expired_session_rejected_by_time(
+        self, client, test_user, db, internal_secret
+    ):
         """Test that sessions expired by time are rejected."""
         import uuid
 
@@ -248,9 +250,7 @@ class TestRefreshTokens:
     def test_refresh_token_for_inactive_user(self, test_user, db):
         """Test that refresh tokens for inactive users are rejected."""
         # Create session
-        access_token, refresh_token = auth_service.create_user_session(
-            db, test_user
-        )
+        access_token, refresh_token = auth_service.create_user_session(db, test_user)
 
         # Deactivate user
         test_user.is_active = False
@@ -455,14 +455,20 @@ class TestSessionLogout:
             sessions.append(refresh_token)
 
         # Verify all sessions exist
-        assert db.query(UserSession).filter(UserSession.user_id == test_user.id).count() == 3
+        assert (
+            db.query(UserSession).filter(UserSession.user_id == test_user.id).count()
+            == 3
+        )
 
         # Logout all
         count = auth_service.logout_all(db, test_user.id)
         assert count == 3
 
         # Verify all sessions are gone
-        assert db.query(UserSession).filter(UserSession.user_id == test_user.id).count() == 0
+        assert (
+            db.query(UserSession).filter(UserSession.user_id == test_user.id).count()
+            == 0
+        )
 
     def test_refresh_after_logout_fails(self, test_user, db):
         """Test that refresh token cannot be used after logout."""

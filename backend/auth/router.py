@@ -8,9 +8,11 @@ from typing import Optional, cast
 
 from fastapi import APIRouter, Request, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from config import Settings
+from services.email_service import email_service
 from db import get_db
 from auth.models import User, Session as SessionModel, PasswordResetToken
 from auth.service import auth_service
@@ -560,20 +562,22 @@ def internal_request_password_reset(
         db.add(reset_token)
         db.commit()
 
-        # TODO: Send email with reset link
-        # For now, log the token (in production, send via email)
+        # Send password reset email
+        reset_url = f"{settings.frontend_url}/auth/reset-password?token={token}"
+        email_sent = email_service.send_password_reset(
+            to=user.email,
+            reset_url=reset_url,
+            expires_in_hours=1,
+        )
+
         logger.info(
             "internal.password_reset.token_created",
             extra={
                 "user_id": user.id,
                 "email": email,
-                "token": token,  # Remove this in production!
+                "email_sent": email_sent,
             },
         )
-
-        # In a real application, you would send an email here:
-        # reset_url = f"https://yourdomain.com/auth/reset-password?token={token}"
-        # send_email(user.email, "Password Reset", reset_url)
 
     # Always return success to prevent email enumeration
     return {"message": "If an account exists, a password reset email will be sent"}

@@ -21,7 +21,14 @@ import type {
 	KGEntityDetail,
 	KGEntityList,
 	KGStats,
-	KGNetworkData
+	KGNetworkData,
+	SupportTicket,
+	TicketDetail,
+	TicketListResponse,
+	TicketResponse,
+	TicketPriority,
+	ContactSubmission,
+	ContactListResponse
 } from './types';
 import {
 	getAccessToken,
@@ -549,6 +556,151 @@ export const api = {
 			deleteUser: (id: number): Promise<{ message: string }> =>
 				fetchApi(`/auth/users/${id}`, {
 					method: 'DELETE'
+				})
+		}
+	},
+
+	// ========================================================================
+	// Support System endpoints
+	// ========================================================================
+
+	/**
+	 * Submit a contact form (public, no auth required).
+	 */
+	submitContact: (data: {
+		name: string;
+		email: string;
+		subject: string;
+		message: string;
+	}): Promise<{ success: boolean; message: string }> =>
+		fetchPublic('/contact', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		}),
+
+	support: {
+		/**
+		 * List current user's tickets.
+		 */
+		getTickets: (params?: {
+			status?: string;
+			limit?: number;
+			offset?: number;
+		}): Promise<TicketListResponse> => {
+			const searchParams = new URLSearchParams();
+			if (params?.status) searchParams.set('status', params.status);
+			if (params?.limit) searchParams.set('limit', params.limit.toString());
+			if (params?.offset) searchParams.set('offset', params.offset.toString());
+			const query = searchParams.toString();
+			return fetchApi(`/support/tickets${query ? `?${query}` : ''}`);
+		},
+
+		/**
+		 * Create a new support ticket.
+		 */
+		createTicket: (data: {
+			subject: string;
+			description: string;
+			priority?: TicketPriority;
+		}): Promise<SupportTicket> =>
+			fetchApi('/support/tickets', {
+				method: 'POST',
+				body: JSON.stringify(data)
+			}),
+
+		/**
+		 * Get a specific ticket.
+		 */
+		getTicket: (id: number): Promise<TicketDetail> =>
+			fetchApi(`/support/tickets/${id}`),
+
+		/**
+		 * Add a response to a ticket.
+		 */
+		addResponse: (
+			ticketId: number,
+			data: { message: string; is_internal?: boolean }
+		): Promise<TicketResponse> =>
+			fetchApi(`/support/tickets/${ticketId}/responses`, {
+				method: 'POST',
+				body: JSON.stringify(data)
+			}),
+
+		// Admin endpoints
+		admin: {
+			/**
+			 * List all tickets (admin only).
+			 */
+			getTickets: (params?: {
+				status?: string;
+				priority?: string;
+				assigned_to?: number;
+				limit?: number;
+				offset?: number;
+			}): Promise<TicketListResponse> => {
+				const searchParams = new URLSearchParams();
+				if (params?.status) searchParams.set('status', params.status);
+				if (params?.priority) searchParams.set('priority', params.priority);
+				if (params?.assigned_to) searchParams.set('assigned_to', params.assigned_to.toString());
+				if (params?.limit) searchParams.set('limit', params.limit.toString());
+				if (params?.offset) searchParams.set('offset', params.offset.toString());
+				const query = searchParams.toString();
+				return fetchApi(`/admin/support/tickets${query ? `?${query}` : ''}`);
+			},
+
+			/**
+			 * Get a specific ticket (admin).
+			 */
+			getTicket: (id: number): Promise<TicketDetail> =>
+				fetchApi(`/admin/support/tickets/${id}`),
+
+			/**
+			 * Update a ticket (admin only).
+			 */
+			updateTicket: (
+				id: number,
+				data: { status?: string; priority?: string; assigned_to?: number }
+			): Promise<SupportTicket> =>
+				fetchApi(`/admin/support/tickets/${id}`, {
+					method: 'PUT',
+					body: JSON.stringify(data)
+				}),
+
+			/**
+			 * Add admin response to a ticket.
+			 */
+			addResponse: (
+				ticketId: number,
+				data: { message: string; is_internal?: boolean }
+			): Promise<TicketResponse> =>
+				fetchApi(`/admin/support/tickets/${ticketId}/responses`, {
+					method: 'POST',
+					body: JSON.stringify(data)
+				}),
+
+			/**
+			 * List contact form submissions (admin only).
+			 */
+			getContacts: (params?: {
+				is_read?: boolean;
+				limit?: number;
+				offset?: number;
+			}): Promise<ContactListResponse> => {
+				const searchParams = new URLSearchParams();
+				if (params?.is_read !== undefined)
+					searchParams.set('is_read', params.is_read.toString());
+				if (params?.limit) searchParams.set('limit', params.limit.toString());
+				if (params?.offset) searchParams.set('offset', params.offset.toString());
+				const query = searchParams.toString();
+				return fetchApi(`/admin/support/contacts${query ? `?${query}` : ''}`);
+			},
+
+			/**
+			 * Mark a contact as read (admin only).
+			 */
+			markContactRead: (id: number): Promise<{ status: string }> =>
+				fetchApi(`/admin/support/contacts/${id}/read`, {
+					method: 'PUT'
 				})
 		}
 	}
