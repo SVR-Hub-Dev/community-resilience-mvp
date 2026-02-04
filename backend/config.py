@@ -36,8 +36,10 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.1-8b-instant"
 
     # Embeddings
-    embedding_model: str = "all-MiniLM-L6-v2"
-    embedding_dimension: int = 384
+    embedding_provider: Literal["local", "voyage"] = "voyage"  # "voyage" for cloud, "local" for sentence-transformers
+    embedding_model: str = "voyage-3-lite"  # or "all-MiniLM-L6-v2" for local
+    embedding_dimension: int = 512  # 512 for voyage-3-lite, 384 for all-MiniLM-L6-v2
+    voyage_api_key: str = ""
 
     # API
     api_host: str = "0.0.0.0"
@@ -332,5 +334,7 @@ class LLMConfig:
 class EmbeddingConfig:
     """Embedding model configuration."""
 
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "384"))
+    EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "voyage")  # "voyage" or "local"
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "voyage-3-lite")
+    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "512"))
+    VOYAGE_API_KEY: Optional[str] = os.getenv("VOYAGE_API_KEY")

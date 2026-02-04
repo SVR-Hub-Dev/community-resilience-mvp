@@ -15,7 +15,9 @@ pgvector>=0.2.0
 pymupdf>=1.23.0
 
 # Embeddings
-sentence-transformers>=2.2.0
+# sentence-transformers - only needed for local embedding mode (high memory)
+# sentence-transformers>=2.2.0
+voyageai>=0.3.0  # Cloud embedding API (low memory)
 
 # HTTP client
 httpx>=0.26.0
