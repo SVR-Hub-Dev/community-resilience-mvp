@@ -108,6 +108,14 @@ export interface APIKeyCreated extends APIKey {
 	key: string; // Full key - only shown on creation
 }
 
+export interface Session {
+	id: number;
+	user_agent: string | null;
+	ip_address: string | null;
+	expires_at: string;
+	created_at: string;
+	is_current?: boolean;
+}
 
 export interface AuthResponse {
 	user: User;

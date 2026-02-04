@@ -27,109 +27,37 @@ import type {
 	TicketListResponse,
 	TicketResponse,
 	TicketPriority,
-	ContactSubmission,
 	ContactListResponse
 } from './types';
-import {
-	getAccessToken,
-	getRefreshToken,
-	updateAccessToken,
-	clearAuth
-} from './auth.svelte';
-
-// Use VITE_API_URL env var for production, fall back to /api for local dev (proxied by Vite)
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
-
-// Track if we're currently refreshing to prevent multiple refresh attempts
-let isRefreshing = false;
-let refreshPromise: Promise<boolean> | null = null;
+// All API calls go through /api which is handled by the SvelteKit proxy route.
+// The proxy mints derived JWTs for authenticated requests using session cookies.
+const API_BASE = '/api';
 
 /**
- * Attempt to refresh the access token using the refresh token.
- * Returns true if successful, false otherwise.
- */
-async function refreshAccessToken(): Promise<boolean> {
-	const refreshToken = getRefreshToken();
-	if (!refreshToken) {
-		return false;
-	}
-
-	try {
-		const response = await fetch(`${API_BASE}/auth/refresh`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ refresh_token: refreshToken })
-		});
-
-		if (!response.ok) {
-			return false;
-		}
-
-		const data: TokenPair = await response.json();
-		updateAccessToken(data.access_token);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Core fetch wrapper with authentication and token refresh.
+ * Core fetch wrapper. Authentication is handled server-side by the API proxy.
  */
 async function fetchApi<T>(
 	endpoint: string,
 	options?: RequestInit,
-	skipAuth = false
+	_skipAuth = false
 ): Promise<T> {
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
 		...(options?.headers as Record<string, string>)
 	};
 
-	// Add auth header if we have a token
-	const token = getAccessToken();
-	if (token && !skipAuth) {
-		headers['Authorization'] = `Bearer ${token}`;
-	}
-
-	let response = await fetch(`${API_BASE}${endpoint}`, {
+	const response = await fetch(`${API_BASE}${endpoint}`, {
 		...options,
 		headers,
-		credentials: 'include'
+		credentials: 'include' // Include session cookie for proxy authentication
 	});
 
-	// If 401 and we have a refresh token, try to refresh
-	if (response.status === 401 && !skipAuth) {
-		// Prevent multiple simultaneous refresh attempts
-		if (!isRefreshing) {
-			isRefreshing = true;
-			refreshPromise = refreshAccessToken();
+	// Handle 401 by redirecting to login
+	if (response.status === 401) {
+		if (typeof window !== 'undefined') {
+			window.location.href = '/auth/login';
 		}
-
-		const refreshed = await refreshPromise;
-		isRefreshing = false;
-		refreshPromise = null;
-
-		if (refreshed) {
-			// Retry the original request with new token
-			const newToken = getAccessToken();
-			if (newToken) {
-				headers['Authorization'] = `Bearer ${newToken}`;
-			}
-			response = await fetch(`${API_BASE}${endpoint}`, {
-				...options,
-				headers
-			});
-		} else {
-			// Refresh failed, clear auth and redirect to login
-			clearAuth();
-			if (typeof window !== 'undefined') {
-				window.location.href = '/auth/login';
-			}
-			throw new Error('Session expired. Please log in again.');
-		}
+		throw new Error('Session expired. Please log in again.');
 	}
 
 	if (!response.ok) {
@@ -153,22 +81,23 @@ async function fetchPublic<T>(endpoint: string, options?: RequestInit): Promise<
 }
 
 /**
- * Upload a file via multipart form data with authentication.
+ * Upload a file via multipart form data.
+ * Authentication is handled server-side by the API proxy.
  * Does not set Content-Type — the browser sets it with the boundary.
  */
 async function fetchUpload<T>(endpoint: string, formData: FormData): Promise<T> {
-	const headers: Record<string, string> = {};
-	const token = getAccessToken();
-	if (token) {
-		headers['Authorization'] = `Bearer ${token}`;
-	}
-
 	const response = await fetch(`${API_BASE}${endpoint}`, {
 		method: 'POST',
-		headers,
 		body: formData,
-		credentials: 'include'
+		credentials: 'include' // Include session cookie for proxy authentication
 	});
+
+	if (response.status === 401) {
+		if (typeof window !== 'undefined') {
+			window.location.href = '/auth/login';
+		}
+		throw new Error('Session expired. Please log in again.');
+	}
 
 	if (!response.ok) {
 		const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
