@@ -16,22 +16,7 @@
 	let editIsActive = $state(true);
 
 	onMount(async () => {
-		// Wait a moment for auth state to potentially update
-		setTimeout(async () => {
-			console.log('Admin users page mount - auth state:', {
-				isAuthenticated: authState.isAuthenticated,
-				isAdmin: authState.isAdmin,
-				user: authState.user
-			});
-			
-			if (!authState.isAuthenticated || !authState.isAdmin) {
-				console.log('Redirecting - not authenticated or not admin');
-				goto('/');
-				return;
-			}
-			console.log('Loading users...');
-			await loadUsers();
-		}, 100);
+		await loadUsers();
 	});
 
 	async function loadUsers() {

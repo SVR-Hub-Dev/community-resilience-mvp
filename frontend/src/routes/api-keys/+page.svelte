@@ -18,10 +18,6 @@
 	let createdKey = $state<APIKeyCreated | null>(null);
 
 	onMount(async () => {
-		if (!auth.isAuthenticated) {
-			goto('/auth/login');
-			return;
-		}
 		await loadApiKeys();
 	});
 

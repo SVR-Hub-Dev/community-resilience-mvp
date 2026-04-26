@@ -2,6 +2,10 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import type { KnowledgeEntry } from '$lib/types';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+	let canEdit = $derived(data.canEdit);
 
 	let entries: KnowledgeEntry[] = $state([]);
 	let loading = $state(true);
@@ -100,11 +104,18 @@
 	<div class="page-header">
 		<div class="header-row">
 			<h1>Knowledge Base</h1>
-			<button class="btn btn-primary" onclick={() => { resetForm(); showForm = !showForm; }}>
-				{showForm ? 'Cancel' : 'Add Entry'}
-			</button>
+			{#if canEdit}
+				<button class="btn btn-primary" onclick={() => { resetForm(); showForm = !showForm; }}>
+					{showForm ? 'Cancel' : 'Add Entry'}
+				</button>
+			{/if}
 		</div>
 		<p>Community knowledge entries used for disaster response recommendations.</p>
+		{#if !canEdit}
+			<div class="info-banner">
+				<span>📖 Viewing mode - Contact an editor to add entries</span>
+			</div>
+		{/if}
 	</div>
 
 	{#if error}
@@ -171,14 +182,16 @@
 				<div class="card entry-card">
 					<div class="entry-header">
 						<h3>{entry.title}</h3>
-						<div class="entry-actions">
-							<button class="btn-icon" title="Edit" onclick={() => editEntry(entry)}>
-								✏️
-							</button>
-							<button class="btn-icon" title="Delete" onclick={() => deleteEntry(entry.id)}>
-								🗑️
-							</button>
-						</div>
+						{#if canEdit}
+							<div class="entry-actions">
+								<button class="btn-icon" title="Edit" onclick={() => editEntry(entry)}>
+									✏️
+								</button>
+								<button class="btn-icon" title="Delete" onclick={() => deleteEntry(entry.id)}>
+									🗑️
+								</button>
+							</div>
+						{/if}
 					</div>
 					<p class="entry-description">{entry.description}</p>
 					<div class="entry-meta">

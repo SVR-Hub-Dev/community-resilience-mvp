@@ -20,6 +20,8 @@ from fastapi import (
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth.dependencies import require_viewer, require_editor
+from auth.models import User
 from config import DeploymentConfig, DeploymentMode
 from db import get_db, SessionLocal
 from models.models import Document, ProcessingStatus
@@ -158,6 +160,7 @@ async def upload_document(
     location: Optional[str] = Form(None),
     hazard_type: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
+    user: User = Depends(require_editor),
     db: AsyncSession = Depends(get_db),
 ) -> DocumentUploadResponse:
     """
@@ -273,6 +276,7 @@ async def upload_document(
 @router.get("/{document_id}/status", response_model=DocumentStatusResponse)
 async def get_document_status(
     document_id: int,
+    user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> DocumentStatusResponse:
     """Get the processing status of a document."""
@@ -292,6 +296,7 @@ async def get_document_status(
 
 @router.get("/processing/stats")
 async def get_processing_stats(
+    user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Get document processing statistics."""

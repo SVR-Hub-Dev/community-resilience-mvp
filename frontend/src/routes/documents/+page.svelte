@@ -3,6 +3,10 @@
 	import { api } from '$lib/api';
 	import type { DocumentUploadResponse, DocumentStatusResponse, DocumentProcessingStats } from '$lib/types';
 	import DocumentStatusBadge from '$lib/components/DocumentStatusBadge.svelte';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+	let canEdit = $derived(data.canEdit);
 
 	let loading = $state(false);
 	let error = $state('');
@@ -127,17 +131,24 @@
 	<div class="page-header">
 		<div class="header-row">
 			<h1>Documents</h1>
-			<button
-				class="btn btn-primary"
-				onclick={() => {
-					resetForm();
-					showUploadForm = !showUploadForm;
-				}}
-			>
-				{showUploadForm ? 'Cancel' : 'Upload Document'}
-			</button>
+			{#if canEdit}
+				<button
+					class="btn btn-primary"
+					onclick={() => {
+						resetForm();
+						showUploadForm = !showUploadForm;
+					}}
+				>
+					{showUploadForm ? 'Cancel' : 'Upload Document'}
+				</button>
+			{/if}
 		</div>
 		<p>Upload and manage community knowledge documents.</p>
+		{#if !canEdit}
+			<div class="info-banner">
+				<span>📖 Viewing mode - Contact an editor to upload documents</span>
+			</div>
+		{/if}
 	</div>
 
 	{#if error}

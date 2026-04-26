@@ -2,6 +2,10 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import type { CommunityEvent } from '$lib/types';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+	let canEdit = $derived(data.canEdit);
 
 	let events: CommunityEvent[] = $state([]);
 	let loading = $state(true);
@@ -78,12 +82,20 @@
 	<div class="page-header">
 		<div class="header-row">
 			<h1>Community Events</h1>
-			<button class="btn btn-primary" onclick={() => { resetForm(); showForm = !showForm; }}>
-				{showForm ? 'Cancel' : 'Report Event'}
-			</button>
+			{#if canEdit}
+				<button class="btn btn-primary" onclick={() => { resetForm(); showForm = !showForm; }}>
+					{showForm ? 'Cancel' : 'Report Event'}
+				</button>
+			{/if}
 		</div>
 		<p>Real-time reports from the community during emergencies.</p>
 	</div>
+
+	{#if !canEdit}
+		<div class="info-banner">
+			<span>📖 Viewing mode - Contact an editor to report events</span>
+		</div>
+	{/if}
 
 	{#if error}
 		<div class="alert alert-error">{error}</div>
@@ -279,6 +291,16 @@
 		gap: 1rem;
 		font-size: 0.875rem;
 		color: var(--text-muted);
+	}
+
+	.info-banner {
+		background: #eff6ff;
+		border: 1px solid #3b82f6;
+		border-radius: 6px;
+		padding: 0.75rem 1rem;
+		margin-bottom: 1.5rem;
+		color: #1e40af;
+		font-size: 0.875rem;
 	}
 
 	.empty-state {

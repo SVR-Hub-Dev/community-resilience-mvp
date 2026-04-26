@@ -117,7 +117,7 @@ async def get_document_processing_stats(db: AsyncSession) -> dict:
     )
 
     stats: dict[str, int] = {}
-    for row in result:
+    for row in result.all():
         stats[row.processing_status] = row.doc_count
 
     # Get count of documents needing full processing

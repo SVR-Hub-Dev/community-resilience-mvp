@@ -52,6 +52,14 @@ async function fetchApi<T>(
 		credentials: 'include' // Include session cookie for proxy authentication
 	});
 
+	// Handle 403 by redirecting to unauthorized page
+	if (response.status === 403) {
+		if (typeof window !== 'undefined') {
+			window.location.href = '/unauthorized';
+		}
+		throw new Error('Access denied');
+	}
+
 	// Handle 401 by redirecting to login
 	if (response.status === 401) {
 		if (typeof window !== 'undefined') {
@@ -91,6 +99,13 @@ async function fetchUpload<T>(endpoint: string, formData: FormData): Promise<T> 
 		body: formData,
 		credentials: 'include' // Include session cookie for proxy authentication
 	});
+
+	if (response.status === 403) {
+		if (typeof window !== 'undefined') {
+			window.location.href = '/unauthorized';
+		}
+		throw new Error('Access denied');
+	}
 
 	if (response.status === 401) {
 		if (typeof window !== 'undefined') {

@@ -1,37 +1,29 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
-	import { getAuthState } from '$lib/auth.svelte';
 	import KGEntityCard from '$lib/components/KGEntityCard.svelte';
 	import type { KGEntity, KGStats } from '$lib/types';
+	import type { PageData } from './$types';
 
 	const ENTITY_TYPES = ['HazardType', 'Community', 'Agency', 'Location', 'Resource', 'Action'];
 
-	const auth = getAuthState();
+	let { data }: { data: PageData } = $props();
+	let canEdit = $derived(data.canEdit);
 
 	let entities: KGEntity[] = $state([]);
 	let stats: KGStats | null = $state(null);
 	let total = $state(0);
 	let loading = $state(true);
 	let error = $state('');
-	let initialLoadDone = $state(false);
 
 	// Filters
 	let selectedType: string = $state('');
 	let searchQuery: string = $state('');
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	// Wait for auth to be initialized before loading data
-	$effect(() => {
-		if (auth.isInitialized && !initialLoadDone) {
-			if (!auth.isAuthenticated) {
-				goto('/auth/login');
-				return;
-			}
-			initialLoadDone = true;
-			loadEntities();
-			loadStats();
-		}
+	onMount(() => {
+		loadEntities();
+		loadStats();
 	});
 
 	async function loadEntities() {
